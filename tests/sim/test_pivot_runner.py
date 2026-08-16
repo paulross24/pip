@@ -197,15 +197,15 @@ def test_phase_targets_follow_the_canonical_order_and_literal_fl_rr_geometry() -
     }
     assert phases["DRIVE_TURN"] == {
         Leg.FL: (-18.0, 91.0),
-        Leg.FR: (-18.0, 95.0),
+        Leg.FR: (-12.0, 95.0),
         Leg.RL: (8.0, 90.0),
-        Leg.RR: (8.0, 86.0),
+        Leg.RR: (2.0, 86.0),
     }
     assert phases["REPLANT"] == {
         Leg.FL: (-18.0, 95.0),
-        Leg.FR: (-18.0, 95.0),
+        Leg.FR: (-12.0, 95.0),
         Leg.RL: (8.0, 90.0),
-        Leg.RR: (8.0, 90.0),
+        Leg.RR: (2.0, 90.0),
     }
     assert phases["RECOVER"] == phases["STAND"]
 
@@ -246,7 +246,7 @@ def test_runner_uses_only_motor_targets_after_spawn_and_measures_bullet_motion()
     assert (result.translation_x_m, result.translation_y_m, result.translation_m) == pytest.approx((0.03, 0.04, 0.05))
     assert result.max_roll_deviation_deg == pytest.approx(4.0, abs=1e-6)
     assert result.max_pitch_deviation_deg == pytest.approx(3.0, abs=1e-6)
-    assert result.elapsed_sim_s == pytest.approx(0.75)
+    assert result.elapsed_sim_s == pytest.approx(0.85)
     assert result.fell is False
     assert result.aborted is False
     assert result.invalid_reason is None
@@ -278,6 +278,79 @@ def test_runner_aborts_remaining_motion_when_a_measured_fall_occurs() -> None:
     assert sum(call[0] == "setJointMotorControl2" for call in fallen_client.calls) < sum(
         call[0] == "setJointMotorControl2" for call in safe_client.calls
     )
+
+
+def test_runner_aborts_a_fall_during_initial_stand_before_settle_or_turn_motion() -> None:
+    client = FakeBulletClient(fall_after_steps=1)
+
+    result = run_candidate(
+        PARAMETERS,
+        Surface("nominal", 0.70),
+        SimulationSettings.from_mapping(settings_mapping()),
+        lambda: client,
+    )
+
+    assert result.fell is True
+    assert result.aborted is True
+    assert result.invalid_reason == "fall-detected"
+    assert result.elapsed_sim_s == pytest.approx(0.05)
+    assert sum(call[0] == "setJointMotorControl2" for call in client.calls) == 8
+
+
+@pytest.mark.parametrize(
+    "malformed_pose",
+    [
+        ((0.0, 0.0, 0.14), (0.0, 0.0, 0.0, 0.0)),
+        ((0.0, 0.0), quaternion(-2.397)),
+    ],
+)
+def test_malformed_base_pose_returns_a_structured_invalid_result_with_safe_fallback(
+    malformed_pose: tuple[tuple[float, ...], tuple[float, ...]],
+) -> None:
+    class MalformedPoseClient(FakeBulletClient):
+        def getBasePositionAndOrientation(self, body_id: int) -> tuple[tuple[float, ...], tuple[float, ...]]:
+            return malformed_pose
+
+    result = run_candidate(
+        PARAMETERS,
+        Surface("nominal", 0.70),
+        SimulationSettings.from_mapping(settings_mapping()),
+        MalformedPoseClient,
+    )
+
+    assert result.aborted is True
+    assert result.invalid_reason is not None
+    assert result.final_pose.position_xyz == pytest.approx((0.0, 0.0, 0.14))
+    assert sum(value * value for value in result.final_pose.quaternion_xyzw) == pytest.approx(1.0)
+
+
+def test_drive_reaches_its_endpoint_then_holds_it_for_the_full_hold_duration() -> None:
+    client = FakeBulletClient()
+
+    run_candidate(
+        PARAMETERS,
+        Surface("nominal", 0.70),
+        SimulationSettings.from_mapping(settings_mapping()),
+        lambda: client,
+    )
+
+    fl_hip_drive_target = 0.8371526679379733
+    fl_hip_targets = [
+        call[3]["targetPosition"]
+        for call in client.calls
+        if call[0] == "setJointMotorControl2" and call[3]["jointIndex"] == 0
+    ]
+    drive_target_runs: list[int] = []
+    for target in fl_hip_targets:
+        if target == pytest.approx(fl_hip_drive_target, abs=1e-12):
+            if not drive_target_runs or drive_target_runs[-1] == 0:
+                drive_target_runs.append(1)
+            else:
+                drive_target_runs[-1] += 1
+        elif drive_target_runs:
+            drive_target_runs.append(0)
+
+    assert max(drive_target_runs) == 1 + math.ceil(PARAMETERS.hold_s / 0.05)
 
 
 def test_importing_runner_does_not_load_hardware_modules() -> None:

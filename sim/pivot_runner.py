@@ -143,15 +143,19 @@ def load_simulation_settings(path: str | Path) -> SimulationSettings:
 
 def _endpoints(
     *,
-    front_offset_mm: float = 0.0,
-    rear_offset_mm: float = 0.0,
+    unloaded_diagonal_offset_mm: float = 0.0,
+    loaded_diagonal_offset_mm: float = 0.0,
     unload_mm: float = 0.0,
     replant: bool = False,
 ) -> dict[Leg, tuple[float, float]]:
     result: dict[Leg, tuple[float, float]] = {}
     for leg in Leg:
         x_mm, down_mm = factory_stance_mm[leg]
-        offset = front_offset_mm if leg in (Leg.FL, Leg.FR) else rear_offset_mm
+        offset = (
+            unloaded_diagonal_offset_mm
+            if leg in (Leg.FL, Leg.RR)
+            else loaded_diagonal_offset_mm
+        )
         lifted = unload_mm if leg in (Leg.FL, Leg.RR) and not replant else 0.0
         result[leg] = (x_mm + offset, down_mm - lifted)
     return result
@@ -164,13 +168,13 @@ def phase_endpoint_targets(parameters: TurnParameters) -> dict[str, dict[Leg, tu
     stand = _endpoints()
     shifted = _endpoints(unload_mm=parameters.unload_mm)
     drive = _endpoints(
-        front_offset_mm=-parameters.tangential_mm,
-        rear_offset_mm=parameters.tangential_mm,
+        unloaded_diagonal_offset_mm=-parameters.tangential_mm,
+        loaded_diagonal_offset_mm=parameters.tangential_mm,
         unload_mm=parameters.unload_mm,
     )
     replant = _endpoints(
-        front_offset_mm=-parameters.tangential_mm,
-        rear_offset_mm=parameters.tangential_mm,
+        unloaded_diagonal_offset_mm=-parameters.tangential_mm,
+        loaded_diagonal_offset_mm=parameters.tangential_mm,
         replant=True,
     )
     return {
@@ -284,14 +288,27 @@ def _invalid_result(
     *,
     fell: bool = False,
 ) -> SimulationResult:
-    if pose is None:
-        position = (0.0, 0.0, settings.spawn_height_m)
-        quaternion = _quaternion_from_roll_deg(settings.roll_zero_deg)
-    else:
+    fallback_position = (0.0, 0.0, settings.spawn_height_m)
+    fallback_quaternion = _quaternion_from_roll_deg(settings.roll_zero_deg)
+    try:
+        if pose is None:
+            raise ValueError("no measured pose")
         position, quaternion = pose
-    position_xyz = tuple(_finite(value, "position_xyz") for value in position)
-    quaternion_xyzw = tuple(_finite(value, "quaternion_xyzw") for value in quaternion)
-    roll, pitch, yaw = _euler_deg(quaternion_xyzw)
+        position_xyz = tuple(_finite(value, "position_xyz") for value in position)
+        quaternion_xyzw = tuple(_finite(value, "quaternion_xyzw") for value in quaternion)
+        if len(position_xyz) != 3:
+            raise ValueError("position_xyz must contain three values")
+        roll, pitch, yaw = _euler_deg(quaternion_xyzw)
+        final_pose = FinalPose(position_xyz, quaternion_xyzw, roll, pitch, yaw)  # type: ignore[arg-type]
+    except (IndexError, TypeError, ValueError):
+        roll, pitch, yaw = _euler_deg(fallback_quaternion)
+        final_pose = FinalPose(
+            fallback_position,
+            fallback_quaternion,
+            roll,
+            pitch,
+            yaw,
+        )
     return SimulationResult(
         parameters=parameters,
         surface_name=surface.name,
@@ -305,7 +322,7 @@ def _invalid_result(
         fell=fell,
         contact_instability=1.0,
         elapsed_sim_s=elapsed_s,
-        final_pose=FinalPose(position_xyz, quaternion_xyzw, roll, pitch, yaw),  # type: ignore[arg-type]
+        final_pose=final_pose,
         foot_contacts=contacts or _safe_contacts(),
         aborted=True,
         invalid_reason=reason,
@@ -377,24 +394,27 @@ def run_candidate(
             last_contacts = _contacts_from_points(points, foot_links)
             supported_feet = sum(contact.in_contact for contact in last_contacts)
             support_loss_s = support_loss_s + settings.time_step_s if supported_feet < 2 else 0.0
+            roll, pitch, _ = _euler_deg(orientation)
+            torso_contact = any(
+                len(point) > 9
+                and point[3] == -1
+                and _finite(point[9], "normal_force_n", nonnegative=True) > 0.0
+                for point in points
+            )
             if baseline_roll is not None and baseline_pitch is not None:
                 measured_samples += 1
                 if supported_feet < 3:
                     unstable_samples += 1
-                roll, pitch, _ = _euler_deg(orientation)
                 max_roll_deviation = max(max_roll_deviation, abs(roll - baseline_roll))
                 max_pitch_deviation = max(max_pitch_deviation, abs(pitch - baseline_pitch))
-                torso_contact = any(
-                    len(point) > 3 and point[3] == -1 and _finite(point[9], "normal_force_n", nonnegative=True) > 0.0
-                    for point in points
-                )
-                fell = (
-                    abs(roll - settings.roll_zero_deg) > settings.fall_roll_deg
-                    or abs(pitch - baseline_pitch) > settings.fall_pitch_deg
-                    or position[2] < settings.min_height_m
-                    or torso_contact
-                    or support_loss_s >= settings.support_loss_duration_s
-                )
+            pitch_reference = baseline_pitch if baseline_pitch is not None else 0.0
+            fell = (
+                abs(roll - settings.roll_zero_deg) > settings.fall_roll_deg
+                or abs(pitch - pitch_reference) > settings.fall_pitch_deg
+                or position[2] < settings.min_height_m
+                or torso_contact
+                or support_loss_s >= settings.support_loss_duration_s
+            )
 
         def drive(targets: Mapping[str, float], duration_s: float) -> None:
             nonlocal current_targets, elapsed_s
@@ -440,13 +460,15 @@ def run_candidate(
 
         durations = {
             "SHIFT_UNLOAD": parameters.settle_s,
-            "DRIVE_TURN": parameters.hold_s,
+            "DRIVE_TURN": parameters.settle_s,
             "REPLANT": parameters.replant_s,
             "RECOVER": parameters.settle_s,
         }
         for _cycle in range(parameters.cycles):
             for phase in PHASES[2:]:
                 drive(phase_joints[phase], durations[phase])
+                if phase == "DRIVE_TURN" and not fell:
+                    drive(phase_joints[phase], parameters.hold_s)
                 if fell:
                     break
             if fell:
