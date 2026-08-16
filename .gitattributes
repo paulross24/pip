@@ -1,0 +1,2 @@
+# Preserve archived evidence as byte-identical source documents.
+archive/selected-evidence/*.md -text
