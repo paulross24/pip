@@ -15,6 +15,15 @@ from typing import Any
 from .models import ImuSample
 
 
+# The bundled PiDog SH3001 driver configures the accelerometer for +/-2g and
+# documents 1g as 16,384 raw counts. A broad 0.5g..1.5g envelope rejects
+# disconnected/implausible stationary-turn readings while retaining normal
+# historical PiP observations near 16.3k counts and generous motion headroom.
+_SH3001_RAW_COUNTS_PER_G = 16_384.0
+_MIN_GRAVITY_MAGNITUDE_RAW = 0.5 * _SH3001_RAW_COUNTS_PER_G
+_MAX_GRAVITY_MAGNITUDE_RAW = 1.5 * _SH3001_RAW_COUNTS_PER_G
+
+
 class ImuReadError(RuntimeError):
     """A live IMU sample could not be acquired or validated."""
 
@@ -92,6 +101,21 @@ def _finite_triple(value: object, label: str) -> tuple[float, float, float]:
     return result[0], result[1], result[2]
 
 
+def _plausible_acceleration(
+    value: object,
+    label: str,
+) -> tuple[float, float, float]:
+    acceleration = _finite_triple(value, label)
+    magnitude = math.hypot(*acceleration)
+    if not _MIN_GRAVITY_MAGNITUDE_RAW <= magnitude <= _MAX_GRAVITY_MAGNITUDE_RAW:
+        raise ImuReadError(
+            f"{label} gravity magnitude must be between "
+            f"{_MIN_GRAVITY_MAGNITUDE_RAW:g} and {_MAX_GRAVITY_MAGNITUDE_RAW:g} "
+            "raw SH3001 counts"
+        )
+    return acceleration
+
+
 def _finite_clock_value(value: object, label: str) -> float:
     if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value):
         raise ImuReadError(f"{label} must return a finite number")
@@ -135,7 +159,7 @@ class Sh3001ImuAdapter:
             or len(reading) != 2
         ):
             raise ImuReadError("SH3001 reading must contain accelerometer and gyroscope axes")
-        return _finite_triple(reading[0], "accelerometer"), _finite_triple(
+        return _plausible_acceleration(reading[0], "accelerometer"), _finite_triple(
             reading[1], "gyroscope"
         )
 
@@ -151,17 +175,25 @@ class Sh3001ImuAdapter:
             accelerometer.append(acc_axes)
             gyroscope.append(gyro_axes)
 
-        acc = tuple(
-            sum(reading[axis] for reading in accelerometer) / batch_size
-            for axis in range(3)
+        acc = _plausible_acceleration(
+            tuple(
+                sum(reading[axis] for reading in accelerometer) / batch_size
+                for axis in range(3)
+            ),
+            "averaged accelerometer",
         )
-        gyro = tuple(
-            sum(reading[axis] for reading in gyroscope) / batch_size
-            for axis in range(3)
+        gyro = _finite_triple(
+            tuple(
+                sum(reading[axis] for reading in gyroscope) / batch_size
+                for axis in range(3)
+            ),
+            "averaged gyroscope",
         )
         ax, ay, az = acc
         pitch_deg = math.degrees(math.atan2(-ay, math.hypot(ax, -az)))
         roll_deg = math.degrees(math.atan2(-az, math.hypot(ax, ay)))
+        if not math.isfinite(roll_deg) or not math.isfinite(pitch_deg):
+            raise ImuReadError("derived attitude must contain finite numbers")
 
         monotonic_s = _finite_clock_value(self._monotonic(), "monotonic")
         utc_timestamp = self._utc_now()

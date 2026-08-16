@@ -50,6 +50,24 @@ class TurnParameters:
     cycles: int
     speed: int
 
+    def __post_init__(self) -> None:
+        """Enforce the parameter contract for every construction path."""
+        if self.direction != "right":
+            raise ValueError("direction must be 'right'")
+        if self.unload_pair != "FL_RR":
+            raise ValueError("unload_pair must be 'FL_RR'")
+        for field in _POSITIVE_FINITE_FIELDS:
+            value = _positive_finite_number(getattr(self, field), field)
+            object.__setattr__(self, field, value)
+        if isinstance(self.cycles, bool) or not isinstance(self.cycles, int) or self.cycles <= 0:
+            raise ValueError("cycles must be a positive integer")
+        if (
+            isinstance(self.speed, bool)
+            or not isinstance(self.speed, int)
+            or not 1 <= self.speed <= 100
+        ):
+            raise ValueError("speed must be an integer from 1 through 100")
+
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "TurnParameters":
         """Validate and construct parameters from the exact approved field set."""
@@ -109,6 +127,20 @@ class HeadingObservation:
     heading_deg: float | None = None
     source: str | None = None
     observed_at: str | None = None
+
+    def __post_init__(self) -> None:
+        """Require finite measured headings to carry explicit provenance."""
+        if self.heading_deg is None:
+            return
+        if (
+            isinstance(self.heading_deg, bool)
+            or not isinstance(self.heading_deg, Real)
+            or not math.isfinite(self.heading_deg)
+        ):
+            raise ValueError("heading_deg must be a finite number or None")
+        if not isinstance(self.source, str) or not self.source.strip():
+            raise ValueError("source is required for a heading measurement")
+        object.__setattr__(self, "heading_deg", float(self.heading_deg))
 
 
 @dataclass(frozen=True)

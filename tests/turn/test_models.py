@@ -44,6 +44,29 @@ def test_from_mapping_accepts_the_literal_right_turn_baseline() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("direction", "left"),
+        ("unload_pair", "FR_RL"),
+        ("unload_mm", 0.0),
+        ("tangential_mm", math.nan),
+        ("hold_s", -0.1),
+        ("settle_s", math.inf),
+        ("replant_s", 0.0),
+        ("cycles", True),
+        ("speed", 101),
+    ],
+)
+def test_direct_constructor_enforces_every_turn_parameter_invariant(
+    field: str, value: object
+) -> None:
+    values = {**BASELINE, field: value}
+
+    with pytest.raises(ValueError, match=field):
+        TurnParameters(**values)  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize("field", sorted(BASELINE))
 def test_from_mapping_rejects_each_missing_baseline_field(field: str) -> None:
     mapping = dict(BASELINE)
@@ -103,6 +126,20 @@ def test_turn_parameters_are_immutable() -> None:
 
     with pytest.raises(Exception):
         parameters.speed = 30  # type: ignore[misc]
+
+
+@pytest.mark.parametrize("source", [None, "", "   "])
+def test_heading_observation_rejects_a_measurement_without_provenance(
+    source: str | None,
+) -> None:
+    with pytest.raises(ValueError, match="source"):
+        HeadingObservation(heading_deg=90.0, source=source)
+
+
+@pytest.mark.parametrize("heading_deg", [math.nan, math.inf, -math.inf, True])
+def test_heading_observation_rejects_invalid_measurements(heading_deg: object) -> None:
+    with pytest.raises(ValueError, match="heading_deg"):
+        HeadingObservation(heading_deg=heading_deg, source="compass")  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(

@@ -41,21 +41,22 @@ def test_non_state_transition_raises_and_preserves_the_current_state() -> None:
     assert machine.state is TurnState.PRECHECK
 
 
-@pytest.mark.parametrize("starting_state", [TurnState.STAND, TurnState.DRIVE_TURN])
-def test_abort_from_movement_preparation_or_drive_requires_safe_replant(
+@pytest.mark.parametrize(
+    "starting_state",
+    [
+        TurnState.PRECHECK,
+        TurnState.STAND,
+        TurnState.SETTLE,
+        TurnState.SHIFT_UNLOAD,
+        TurnState.DRIVE_TURN,
+        TurnState.REPLANT,
+        TurnState.RECOVER,
+    ],
+)
+def test_abort_from_every_pre_verification_normal_phase_requires_safe_replant(
     starting_state: TurnState,
 ) -> None:
-    machine = TurnStateMachine()
-
-    while machine.state is not starting_state:
-        machine.transition(
-            {
-                TurnState.PRECHECK: TurnState.STAND,
-                TurnState.STAND: TurnState.SETTLE,
-                TurnState.SETTLE: TurnState.SHIFT_UNLOAD,
-                TurnState.SHIFT_UNLOAD: TurnState.DRIVE_TURN,
-            }[machine.state]
-        )
+    machine = TurnStateMachine(starting_state)
 
     machine.abort()
 

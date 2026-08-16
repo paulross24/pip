@@ -24,7 +24,10 @@ class ScriptedSensor:
 
 
 class ConstantSensor:
-    def __init__(self, reading=((1.0, -1.0, -1.0), (2.0, 3.0, 4.0))):
+    def __init__(
+        self,
+        reading=((8192.0, -8192.0, -8192.0), (2.0, 3.0, 4.0)),
+    ):
         self._reading = reading
 
     def _sh3001_getimudata(self):
@@ -63,7 +66,7 @@ def test_read_sample_uses_direct_injected_sensor_and_historical_orientation():
 
     sample = adapter.read_sample()
 
-    assert sample.accel_xyz == (1.0, -1.0, -1.0)
+    assert sample.accel_xyz == (8192.0, -8192.0, -8192.0)
     assert sample.gyro_xyz == (2.0, 3.0, 4.0)
     assert sample.roll_deg == pytest.approx(35.26438968)
     assert sample.pitch_deg == pytest.approx(35.26438968)
@@ -75,14 +78,14 @@ def test_read_sample_uses_direct_injected_sensor_and_historical_orientation():
 def test_read_sample_averages_every_read_before_deriving_attitude():
     sensor = ScriptedSensor(
         [
-            ((1, -2, -3), (10, 20, 30)),
-            ((3, -4, -5), (30, 40, 50)),
+            ((3000, -6000, -9000), (10, 20, 30)),
+            ((9000, -12000, -15000), (30, 40, 50)),
         ]
     )
 
     sample = adapter_for(sensor).read_sample(batch_size=2)
 
-    assert sample.accel_xyz == (2.0, -3.0, -4.0)
+    assert sample.accel_xyz == (6000.0, -9000.0, -12000.0)
     assert sample.gyro_xyz == (20.0, 30.0, 40.0)
     assert sample.roll_deg == pytest.approx(47.96888623)
     assert sample.pitch_deg == pytest.approx(33.85451481)
@@ -93,12 +96,12 @@ def test_read_sample_averages_every_read_before_deriving_attitude():
     [
         None,
         (),
-        ((1, 2, 3),),
-        ((1, 2), (3, 4, 5)),
-        ((1, 2, 3), (4, 5, 6, 7)),
-        ((1, math.inf, 3), (4, 5, 6)),
-        ((1, 2, 3), (4, math.nan, 6)),
-        ((True, 2, 3), (4, 5, 6)),
+        ((16384, 0, 0),),
+        ((16384, 0), (3, 4, 5)),
+        ((16384, 0, 0), (4, 5, 6, 7)),
+        ((16384, math.inf, 0), (4, 5, 6)),
+        ((16384, 0, 0), (4, math.nan, 6)),
+        ((True, 0, 0), (4, 5, 6)),
     ],
 )
 def test_read_sample_rejects_malformed_or_non_finite_sensor_data(reading):
@@ -143,8 +146,57 @@ def test_injected_sensor_factory_is_lazy_and_sensor_is_reused():
     first = adapter.read_sample()
     second = adapter.read_sample()
 
-    assert first.accel_xyz == second.accel_xyz == (1.0, -1.0, -1.0)
+    assert first.accel_xyz == second.accel_xyz == (8192.0, -8192.0, -8192.0)
     assert len(constructed) == 1
+
+
+@pytest.mark.parametrize(
+    "acceleration",
+    [
+        (0.0, 0.0, 0.0),
+        (8191.0, 0.0, 0.0),
+        (24577.0, 0.0, 0.0),
+    ],
+)
+def test_read_sample_rejects_implausible_raw_gravity_vectors(acceleration):
+    with pytest.raises(ImuReadError, match="gravity magnitude"):
+        adapter_for(ConstantSensor((acceleration, (0.0, 0.0, 0.0)))).read_sample()
+
+
+def test_read_sample_accepts_a_historical_normal_gravity_vector():
+    sample = adapter_for(
+        ConstantSensor(((-16318.0, -1040.0, 276.0), (0.0, 0.0, 0.0)))
+    ).read_sample()
+
+    assert sample.accel_xyz == (-16318.0, -1040.0, 276.0)
+
+
+def test_read_sample_revalidates_the_averaged_gravity_vector():
+    sensor = ScriptedSensor(
+        [
+            ((16384.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+            ((-16384.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        ]
+    )
+
+    with pytest.raises(ImuReadError, match="averaged accelerometer"):
+        adapter_for(sensor).read_sample(batch_size=2)
+
+
+def test_read_sample_rejects_a_non_finite_average_from_finite_raw_axes():
+    sensor = ConstantSensor(
+        ((16384.0, 0.0, 0.0), (1e308, 1e308, 1e308))
+    )
+
+    with pytest.raises(ImuReadError, match="averaged gyroscope"):
+        adapter_for(sensor).read_sample(batch_size=2)
+
+
+def test_read_sample_rejects_a_non_finite_derived_attitude(monkeypatch):
+    monkeypatch.setattr(hardware.math, "degrees", lambda _angle: math.inf)
+
+    with pytest.raises(ImuReadError, match="derived attitude"):
+        adapter_for(ConstantSensor()).read_sample()
 
 
 def test_default_vendor_import_is_deferred_until_read(monkeypatch):
