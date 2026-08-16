@@ -20,7 +20,7 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 from pip_robot.turn.models import TurnParameters
 
 from .kinematics import Leg, factory_stance_mm, inverse_kinematics_deg
-from .model import FinalPose, FootContact, SimulationResult, yaw_delta_from_quaternions, yaw_from_quaternion
+from .model import FinalPose, FootContact, SimulationResult, detect_fall, yaw_delta_from_quaternions, yaw_from_quaternion
 from .surfaces import Surface, required_surfaces
 
 
@@ -33,7 +33,6 @@ _SETTINGS_FIELDS = frozenset(
         "gravity_xyz",
         "spawn_height_m",
         "initial_settle_s",
-        "roll_zero_deg",
         "fall_roll_deg",
         "fall_pitch_deg",
         "min_height_m",
@@ -87,7 +86,6 @@ class SimulationSettings:
     gravity_xyz: tuple[float, float, float]
     spawn_height_m: float
     initial_settle_s: float
-    roll_zero_deg: float
     fall_roll_deg: float
     fall_pitch_deg: float
     min_height_m: float
@@ -114,7 +112,6 @@ class SimulationSettings:
             gravity_xyz=_vector3(data["gravity_xyz"], "gravity_xyz"),
             spawn_height_m=_finite(data["spawn_height_m"], "spawn_height_m", positive=True),
             initial_settle_s=_finite(data["initial_settle_s"], "initial_settle_s", nonnegative=True),
-            roll_zero_deg=_finite(data["roll_zero_deg"], "roll_zero_deg"),
             fall_roll_deg=_finite(data["fall_roll_deg"], "fall_roll_deg", positive=True),
             fall_pitch_deg=_finite(data["fall_pitch_deg"], "fall_pitch_deg", positive=True),
             min_height_m=_finite(data["min_height_m"], "min_height_m", positive=True),
@@ -153,11 +150,7 @@ def _endpoints(
     result: dict[Leg, tuple[float, float]] = {}
     for leg in Leg:
         x_mm, down_mm = factory_stance_mm[leg]
-        offset = (
-            unloaded_diagonal_offset_mm
-            if leg in (Leg.FL, Leg.RR)
-            else loaded_diagonal_offset_mm
-        )
+        offset = unloaded_diagonal_offset_mm if leg in (Leg.FL, Leg.RL) else loaded_diagonal_offset_mm
         lifted = unload_mm if leg in (Leg.FL, Leg.RR) and not replant else 0.0
         result[leg] = (x_mm + offset, down_mm - lifted)
     return result
@@ -291,7 +284,7 @@ def _invalid_result(
     fell: bool = False,
 ) -> SimulationResult:
     fallback_position = (0.0, 0.0, settings.spawn_height_m)
-    fallback_quaternion = _quaternion_from_roll_deg(settings.roll_zero_deg)
+    fallback_quaternion = (0.0, 0.0, 0.0, 1.0)
     try:
         if pose is None:
             raise ValueError("no measured pose")
@@ -362,7 +355,7 @@ def run_candidate(
         for link_index in foot_links.values():
             client.changeDynamics(body_id, link_index, lateralFriction=surface.friction)  # type: ignore[attr-defined]
 
-        initial_quaternion = _quaternion_from_roll_deg(settings.roll_zero_deg)
+        initial_quaternion = (0.0, 0.0, 0.0, 1.0)
         client.resetBasePositionAndOrientation(  # type: ignore[attr-defined]
             body_id,
             (0.0, 0.0, settings.spawn_height_m),
@@ -382,12 +375,15 @@ def run_candidate(
         max_pitch_deviation = 0.0
         baseline_roll: float | None = None
         baseline_pitch: float | None = None
+        safety_roll_reference: float | None = None
+        safety_pitch_reference: float | None = None
         baseline_pose: tuple[Sequence[object], Sequence[object]] | None = None
         fell = False
 
         def sample() -> None:
             nonlocal last_pose, last_contacts, support_loss_s, unstable_samples
             nonlocal measured_samples, max_roll_deviation, max_pitch_deviation, fell
+            nonlocal safety_roll_reference, safety_pitch_reference
             position, orientation = client.getBasePositionAndOrientation(body_id)  # type: ignore[attr-defined]
             position = tuple(_finite(value, "base position") for value in position)
             orientation = tuple(_finite(value, "base quaternion") for value in orientation)
@@ -397,6 +393,8 @@ def run_candidate(
             supported_feet = sum(contact.in_contact for contact in last_contacts)
             support_loss_s = support_loss_s + settings.time_step_s if supported_feet < 2 else 0.0
             roll, pitch, _ = _euler_deg(orientation)
+            if safety_roll_reference is None or safety_pitch_reference is None:
+                safety_roll_reference, safety_pitch_reference = roll, pitch
             torso_contact = any(
                 len(point) > 9
                 and point[3] == -1
@@ -409,13 +407,19 @@ def run_candidate(
                     unstable_samples += 1
                 max_roll_deviation = max(max_roll_deviation, abs(roll - baseline_roll))
                 max_pitch_deviation = max(max_pitch_deviation, abs(pitch - baseline_pitch))
-            pitch_reference = baseline_pitch if baseline_pitch is not None else 0.0
-            fell = (
-                abs(roll - settings.roll_zero_deg) > settings.fall_roll_deg
-                or abs(pitch - pitch_reference) > settings.fall_pitch_deg
-                or position[2] < settings.min_height_m
-                or torso_contact
-                or support_loss_s >= settings.support_loss_duration_s
+            roll_reference = baseline_roll if baseline_roll is not None else safety_roll_reference
+            pitch_reference = baseline_pitch if baseline_pitch is not None else safety_pitch_reference
+            fell = detect_fall(
+                corrected_roll_deg=roll - roll_reference,
+                pitch_deviation_deg=pitch - pitch_reference,
+                height_m=position[2],
+                torso_contact=torso_contact,
+                supported_feet=supported_feet,
+                support_loss_duration_s=support_loss_s,
+                fall_roll_deg=settings.fall_roll_deg,
+                fall_pitch_deg=settings.fall_pitch_deg,
+                min_height_m=settings.min_height_m,
+                max_support_loss_duration_s=settings.support_loss_duration_s,
             )
 
         def drive(targets: Mapping[str, float], duration_s: float) -> None:

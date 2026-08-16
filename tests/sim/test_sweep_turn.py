@@ -28,7 +28,6 @@ SETTINGS = SimulationSettings(
     gravity_xyz=(0.0, 0.0, -9.81),
     spawn_height_m=0.14,
     initial_settle_s=1.5,
-    roll_zero_deg=-2.397,
     fall_roll_deg=10.0,
     fall_pitch_deg=12.0,
     min_height_m=0.075,
@@ -122,7 +121,9 @@ def test_run_sweep_evaluates_each_limited_candidate_on_all_three_surfaces() -> N
         client_factory=sentinel_factory,
         limit=2,
         model_sha256="model-hash",
-        config_sha256="config-hash",
+        turn_config_sha256="turn-hash",
+        simulation_config_sha256="simulation-hash",
+        pybullet_version="3.2.7",
     )
 
     assert [(item[0].hold_s, item[1]) for item in calls] == [
@@ -139,7 +140,9 @@ def test_run_sweep_evaluates_each_limited_candidate_on_all_three_surfaces() -> N
     assert sweep["evaluated_candidate_count"] == 2
     assert sweep["surface_run_count"] == 6
     assert sweep["model_sha256"] == "model-hash"
-    assert sweep["config_sha256"] == "config-hash"
+    assert sweep["turn_config_sha256"] == "turn-hash"
+    assert sweep["simulation_config_sha256"] == "simulation-hash"
+    assert sweep["pybullet_version"] == "3.2.7"
 
 
 def test_ranking_uses_worst_score_then_safety_translation_orientation_and_parameters() -> None:

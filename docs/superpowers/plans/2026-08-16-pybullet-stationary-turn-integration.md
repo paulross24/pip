@@ -70,7 +70,7 @@
 
 **Interfaces:**
 - Produces `SimulationSettings.from_mapping`, `load_turn_parameters(path)`, `load_simulation_settings(path)`, `phase_endpoint_targets(parameters)`, `contact_snapshot(client, body_id, plane_id, foot_links)`, `run_candidate(parameters, surface, settings, client_factory) -> SimulationResult`, and CLI `main(argv=None)`.
-- Phase endpoint sequence is STAND, SETTLE, SHIFT_UNLOAD, DRIVE_TURN, REPLANT, RECOVER and consumes `unload_mm`, `tangential_mm`, `hold_s`, `settle_s`, `replant_s`, cycles, and speed. `FL_RR` unload and opposite diagonal tangential offsets are explicit.
+- Phase endpoint sequence is STAND, SETTLE, SHIFT_UNLOAD, DRIVE_TURN, REPLANT, RECOVER and consumes `unload_mm`, `tangential_mm`, `hold_s`, `settle_s`, `replant_s`, cycles, and speed. `FL_RR` remains the diagonal vertical unload pair; tangential offsets are side-opposed FL/RL versus FR/RR.
 - Bullet boundary methods are injected. Initial spawn may reset base/joints; no base pose reset occurs after simulation begins.
 
 - [ ] Write fake-client tests for shared `TurnParameters` identity, phase order/targets, motor-only drive, no post-spawn base reset, measured quaternion yaw with wrap, XY translation, baseline-relative roll/pitch maxima, contact force/index aggregation, fall abort, and absence of hardware imports.
@@ -87,7 +87,7 @@
 - Modify: `sim/pivot_runner.py`
 
 **Interfaces:**
-- Simulation config: timestep `0.004166666666666667`, solver iterations `80`, gravity `[0,0,-9.81]`, spawn height `0.14`, initial settle `1.5`, roll zero `-2.397`, fall roll/pitch `10/12`, min height `0.075`, support-loss duration `0.10`, model `models/pip.urdf`, DIRECT default.
+- Simulation config: timestep `0.004166666666666667`, solver iterations `80`, gravity `[0,0,-9.81]`, identity-orientation spawn height `0.14`, initial settle `1.5`, measured settled roll/pitch zero, fall roll/pitch `10/12`, min height `0.075`, support-loss duration `0.10`, model `models/pip.urdf`, DIRECT default.
 - CLI: `python -m sim.pivot_runner --config config/turn_right_baseline.json --smoke` prints one structured JSON result and exits 0 for valid simulation, even when physical yaw is small; GUI is optional and never used by tests.
 
 - [ ] Install PyBullet only into the Codex bundled local runtime, record the installed version exactly in `requirements-sim.txt`, and confirm import/version.
@@ -107,7 +107,7 @@
 **Interfaces:**
 - `candidate_parameters(baseline)` yields exactly 125 combinations in product order for unload `[2,3,4,5,6]`, tangential `[1,2,3,4,5]`, hold `[0.25,0.30,0.35,0.40,0.45]`; all other values come from baseline.
 - `run_sweep(...)` evaluates every candidate on low/nominal/high, ranks by worst-surface score then deterministic safety/translation/orientation/parameter tie-breaks, and emits schema `pip-sim-turn-sweep/v1`.
-- `write_ranked_json` and `render_summary` produce byte-stable output with model/config hashes, candidate/safe/fall counts, top ten, best score/yaw, consistency and rationale. No timestamps or raw steps.
+- `write_ranked_json` and `render_summary` produce byte-stable output with separate model/turn/simulation hashes, PyBullet version, candidate/safe/fall counts, top ten, best score/yaw, consistency and rationale. No-safe output includes fallback parameters, worst yaw, disqualification, and a no-promotion decision. No timestamps or raw steps.
 - CLI defaults to ignored `runs/sim/latest-ranked.json` and `runs/sim/latest-summary.md` and supports `--limit` for test/smoke diagnostics without changing full-search definition.
 
 - [ ] Write failing tests for exact candidate set/order, shared contract, cross-surface evaluation, falls never ranking, deterministic tie-breaks, stable JSON bytes, concise summary fields, and output directories.
@@ -129,3 +129,11 @@
 - [ ] Run an identical second sweep and compare SHA-256 of both outputs.
 - [ ] Audit imports and source to prove no hardware dependency, remote connection, physical command, post-initialization base pose reset, duplicate turn model, or tracked `runs/` output.
 - [ ] Run `git diff --check`, `git status`, task/final review. For confirmed defects add a failing regression first, minimal fix, covering/full tests, and one focused fix commit. Do not push.
+
+### Final review fix wave
+
+- [x] Side-opposed tangential geometry with diagonal FL/RR vertical unload retained.
+- [x] Identity spawn and measurement-only roll/pitch zero.
+- [x] Separate turn/simulation hashes plus PyBullet version.
+- [x] Complete no-safe summary evidence and decision.
+- [x] Runner use of the shared configurable fall helper.

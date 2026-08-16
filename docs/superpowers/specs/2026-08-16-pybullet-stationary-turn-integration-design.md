@@ -42,17 +42,17 @@ Scores one `SimulationResult` explicitly. Falls, aborts, invalid results, non-po
 
 Loads `config/turn_right_baseline.json` through `TurnParameters.from_mapping`, loads `config/simulation.json`, and uses DIRECT mode by default. An injected client/factory supports unit tests. The runner loads the selected URDF and plane, applies surface friction, sets deterministic engine properties, establishes the stance and settled baseline, then executes `STAND`, `SETTLE`, `SHIFT_UNLOAD`, `DRIVE_TURN`, `REPLANT`, and `RECOVER` through joint motor targets only.
 
-The phase mapping uses the existing diagonal `FL_RR` unload pair: shift unload vertically by `unload_mm`; apply opposite tangential endpoint offsets of `tangential_mm` to loaded/unloaded diagonal pairs during drive; hold for `hold_s`; replant over `replant_s`; settle/recover over configured durations. It never calls `resetBasePositionAndOrientation` after initialization and never rotates the base artificially.
+The phase mapping uses `FL_RR` only as the diagonal vertical unload pair. Tangential drive is side-opposed: FL/RL move together opposite FR/RR by `tangential_mm`; hold for `hold_s`; replant over `replant_s`; settle/recover over configured durations. The base spawns at identity orientation, settled roll/pitch zero is measured from Bullet, and no post-initialization base reset or artificial rotation occurs.
 
 At every step it samples base pose and `getContactPoints`. Contacts are assigned to FL/FR/RL/RR lower links, normal forces come from tuple index 9, and unexpected support loss is fewer than three feet contacting. Yaw is measured from base quaternion before/after and passed through the existing sourced-heading wrap calculation. Translation is final minus initial planar base position. Roll/pitch maxima are deviations from the settled baseline.
 
-Fall detection is deterministic: corrected roll above 10 degrees, pitch deviation above 12 degrees, base height below 0.075 m, torso/plane contact, or fewer than two supported feet for 0.10 simulated seconds. A fall aborts remaining intended turn phases but still records a result.
+Fall detection is deterministic and centralized in the shared configurable helper: baseline-relative roll, pitch, height, torso contact, and support-loss observations are evaluated against `SimulationSettings`. A fall aborts remaining intended turn phases but still records a result.
 
 ### `tools/sweep_turn.py`
 
 Generates exactly 125 deterministic candidates from unload `[2,3,4,5,6]` mm, tangential `[1,2,3,4,5]` mm, and hold `[0.25,0.30,0.35,0.40,0.45]` seconds. Every candidate runs on all three surfaces. Other `TurnParameters` values come from the shared baseline config. Output order, JSON key ordering, float rounding, and tie-breaks are fixed.
 
-Writes ignored `runs/sim/latest-ranked.json` and `runs/sim/latest-summary.md`. The JSON contains configuration/model hashes and per-surface metrics; the summary contains counts, best metrics, top ten candidates, cross-surface consistency, and recommendation rationale without raw timesteps.
+Writes ignored `runs/sim/latest-ranked.json` and `runs/sim/latest-summary.md`. The JSON contains separate model, turn-config, and simulation-config hashes, PyBullet version, and per-surface metrics. The summary contains counts, best metrics, top ten candidates, cross-surface consistency, and recommendation rationale; a no-safe result still includes fallback parameters, worst yaw, disqualification, and an explicit no-promotion decision.
 
 ### `tools/summarize_turn.py`
 
@@ -60,7 +60,7 @@ Purely summarizes an existing ranked JSON file and cannot run simulation. This k
 
 ## Configuration and dependency
 
-`config/turn_right_baseline.json` remains unchanged and shared. `config/simulation.json` stores only environment/model properties: DIRECT mode, fixed 1/240 s timestep, 80 solver iterations, gravity `[0,0,-9.81]`, spawn height 0.14 m, 1.5 s initial settle, calibrated roll zero, friction family, phase sampling, fall thresholds, and model path.
+`config/turn_right_baseline.json` remains unchanged and shared. `config/simulation.json` stores only environment/model properties: DIRECT mode, fixed 1/240 s timestep, 80 solver iterations, gravity `[0,0,-9.81]`, spawn height 0.14 m, 1.5 s initial settle, friction family, phase sampling, fall thresholds, and model path. Roll/pitch zero is measurement-only and is never injected as spawn orientation.
 
 PyBullet is the only new runtime dependency and is recorded in `requirements-sim.txt` with a compatible pinned version after installation verification. No virtual environment is committed.
 

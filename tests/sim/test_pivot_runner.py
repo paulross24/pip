@@ -41,7 +41,6 @@ def settings_mapping(model_path: str = "models/pip.urdf") -> dict[str, object]:
         "gravity_xyz": [0.0, 0.0, -9.81],
         "spawn_height_m": 0.14,
         "initial_settle_s": 0.10,
-        "roll_zero_deg": -2.397,
         "fall_roll_deg": 10.0,
         "fall_pitch_deg": 12.0,
         "min_height_m": 0.075,
@@ -198,14 +197,14 @@ def test_phase_targets_follow_the_canonical_order_and_literal_fl_rr_geometry() -
     assert phases["DRIVE_TURN"] == {
         Leg.FL: (-18.0, 91.0),
         Leg.FR: (-12.0, 95.0),
-        Leg.RL: (8.0, 90.0),
-        Leg.RR: (2.0, 86.0),
+        Leg.RL: (2.0, 90.0),
+        Leg.RR: (8.0, 86.0),
     }
     assert phases["REPLANT"] == {
         Leg.FL: (-18.0, 95.0),
         Leg.FR: (-12.0, 95.0),
-        Leg.RL: (8.0, 90.0),
-        Leg.RR: (2.0, 90.0),
+        Leg.RL: (2.0, 90.0),
+        Leg.RR: (8.0, 90.0),
     }
     assert phases["RECOVER"] == phases["STAND"]
 
@@ -256,6 +255,7 @@ def test_runner_uses_only_motor_targets_after_spawn_and_measures_bullet_motion()
     joint_resets = [call for call in client.calls if call[0] == "resetJointState"]
     motor_calls = [call for call in client.calls if call[0] == "setJointMotorControl2"]
     assert len(base_resets) == 1
+    assert base_resets[0][2][2] == (0.0, 0.0, 0.0, 1.0)
     assert all(call[1] == 0 for call in base_resets + joint_resets)
     assert motor_calls
     assert all(call[3]["controlMode"] == client.POSITION_CONTROL for call in motor_calls)

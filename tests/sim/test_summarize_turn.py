@@ -35,7 +35,9 @@ def sweep_document() -> dict[str, object]:
     return {
         "schema": "pip-sim-turn-sweep/v1",
         "model_sha256": "a" * 64,
-        "config_sha256": "b" * 64,
+        "turn_config_sha256": "b" * 64,
+        "simulation_config_sha256": "c" * 64,
+        "pybullet_version": "3.2.7",
         "search_candidate_count": 125,
         "evaluated_candidate_count": 12,
         "surface_run_count": 36,
@@ -52,6 +54,8 @@ def test_summary_is_concise_deterministic_and_includes_required_decision_evidenc
     assert "pip-sim-turn-sweep/v1" in summary
     assert "a" * 64 in summary
     assert "b" * 64 in summary
+    assert "c" * 64 in summary
+    assert "PyBullet version: 3.2.7" in summary
     assert "Search candidates: 125" in summary
     assert "Evaluated candidates: 12" in summary
     assert "Safe candidates: 12" in summary
@@ -81,5 +85,8 @@ def test_summary_handles_no_safe_candidate_and_creates_output_directories(tmp_pa
     write_summary(summary, output)
 
     assert "No safe candidate produced a finite positive-yaw score." in summary
+    assert "Ranked fallback parameters:" in summary
+    assert "Worst-surface yaw:" in summary
+    assert "Disqualification:" in summary
     assert output.read_text(encoding="utf-8") == summary
     assert output.read_bytes().endswith(b"\n")

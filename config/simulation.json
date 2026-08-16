@@ -4,7 +4,6 @@
   "gravity_xyz": [0, 0, -9.81],
   "spawn_height_m": 0.14,
   "initial_settle_s": 1.5,
-  "roll_zero_deg": -2.397,
   "fall_roll_deg": 10,
   "fall_pitch_deg": 12,
   "min_height_m": 0.075,

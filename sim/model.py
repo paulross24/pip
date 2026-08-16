@@ -190,20 +190,28 @@ def detect_fall(
     torso_contact: object,
     supported_feet: object,
     support_loss_duration_s: object,
+    fall_roll_deg: object = 10.0,
+    fall_pitch_deg: object = 12.0,
+    min_height_m: object = 0.075,
+    max_support_loss_duration_s: object = 0.10,
 ) -> bool:
     """Apply the fixed simulator safety limits to an observed state."""
     roll = _finite_float(corrected_roll_deg, "corrected_roll_deg")
     pitch = _finite_float(pitch_deviation_deg, "pitch_deviation_deg")
     height = _finite_float(height_m, "height_m")
     duration = _finite_float(support_loss_duration_s, "support_loss_duration_s", minimum=0.0)
+    roll_limit = _finite_float(fall_roll_deg, "fall_roll_deg", minimum=0.0)
+    pitch_limit = _finite_float(fall_pitch_deg, "fall_pitch_deg", minimum=0.0)
+    minimum_height = _finite_float(min_height_m, "min_height_m", minimum=0.0)
+    support_limit = _finite_float(max_support_loss_duration_s, "max_support_loss_duration_s", minimum=0.0)
     if not isinstance(torso_contact, bool):
         raise ValueError("torso_contact must be a boolean")
     if isinstance(supported_feet, bool) or not isinstance(supported_feet, int) or not 0 <= supported_feet <= 4:
         raise ValueError("supported_feet must be an integer from 0 through 4")
     return (
-        abs(roll) > 10.0
-        or abs(pitch) > 12.0
-        or height < 0.075
+        abs(roll) > roll_limit
+        or abs(pitch) > pitch_limit
+        or height < minimum_height
         or torso_contact
-        or (supported_feet < 2 and duration >= 0.10)
+        or (supported_feet < 2 and duration >= support_limit)
     )

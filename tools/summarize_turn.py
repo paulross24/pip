@@ -25,7 +25,9 @@ def render_summary(document: Mapping[str, object]) -> str:
         "",
         f"- Schema: {document.get('schema', '')}",
         f"- Model SHA-256: {document.get('model_sha256', '')}",
-        f"- Config SHA-256: {document.get('config_sha256', '')}",
+        f"- Turn config SHA-256: {document.get('turn_config_sha256', '')}",
+        f"- Simulation config SHA-256: {document.get('simulation_config_sha256', '')}",
+        f"- PyBullet version: {document.get('pybullet_version', '')}",
         f"- Search candidates: {document.get('search_candidate_count', 0)}",
         f"- Evaluated candidates: {document.get('evaluated_candidate_count', 0)}",
         f"- Surface runs: {document.get('surface_run_count', 0)}",
@@ -68,6 +70,34 @@ def render_summary(document: Mapping[str, object]) -> str:
         )
     else:
         lines.append("No safe candidate produced a finite positive-yaw score.")
+        if ranked and isinstance(ranked[0], Mapping):
+            fallback = ranked[0]
+            parameters = fallback.get("parameters", {})
+            results = fallback.get("surface_results", [])
+            if not isinstance(parameters, Mapping) or not isinstance(results, Sequence):
+                raise ValueError("ranked candidate has malformed parameters or surface results")
+            worst_surface = fallback.get("worst_surface")
+            worst = next(
+                (item for item in results if isinstance(item, Mapping) and item.get("surface") == worst_surface),
+                None,
+            )
+            worst_yaw = worst.get("yaw_delta_deg") if isinstance(worst, Mapping) else None
+            reasons = sorted(
+                {
+                    str(item.get("invalid_reason") or ("fall" if item.get("fell") else "non-positive yaw"))
+                    for item in results
+                    if isinstance(item, Mapping) and item.get("score") is None
+                }
+            )
+            lines.extend(
+                [
+                    f"- Ranked fallback parameters: unload {_number(parameters.get('unload_mm'))} mm; "
+                    f"tangential {_number(parameters.get('tangential_mm'))} mm; hold {_number(parameters.get('hold_s'))} s",
+                    f"- Worst-surface yaw: {_number(worst_yaw)} deg ({worst_surface})",
+                    f"- Disqualification: {', '.join(reasons) or 'no finite aggregate score'}.",
+                    "- Decision: do not promote a candidate to physical testing.",
+                ]
+            )
 
     lines.extend(
         [

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict, replace
 import hashlib
+from importlib.metadata import version
 from itertools import product
 import json
 import math
@@ -57,7 +58,9 @@ def run_sweep(
     client_factory: object = direct_client_factory,
     limit: int | None = None,
     model_sha256: str = "",
-    config_sha256: str = "",
+    turn_config_sha256: str = "",
+    simulation_config_sha256: str = "",
+    pybullet_version: str = "",
 ) -> dict[str, object]:
     """Evaluate candidates on every canonical surface and rank deterministically."""
     if not isinstance(settings, SimulationSettings):
@@ -112,7 +115,9 @@ def run_sweep(
     return {
         "schema": SCHEMA,
         "model_sha256": model_sha256,
-        "config_sha256": config_sha256,
+        "turn_config_sha256": turn_config_sha256,
+        "simulation_config_sha256": simulation_config_sha256,
+        "pybullet_version": pybullet_version,
         "search_candidate_count": len(all_candidates),
         "evaluated_candidate_count": len(selected),
         "surface_run_count": len(selected) * len(required_surfaces()),
@@ -178,7 +183,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         settings,
         limit=args.limit,
         model_sha256=sha256_file(settings.model_path),
-        config_sha256=sha256_file(args.config),
+        turn_config_sha256=sha256_file(args.config),
+        simulation_config_sha256=sha256_file(args.simulation_config),
+        pybullet_version=version("pybullet"),
     )
     write_ranked_json(document, args.ranked_output)
 

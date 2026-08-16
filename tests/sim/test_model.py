@@ -190,3 +190,18 @@ def test_detect_fall_keeps_exact_attitude_and_height_thresholds_safe_with_brief_
         )
         is False
     )
+
+
+def test_detect_fall_uses_caller_supplied_safety_thresholds() -> None:
+    assert detect_fall(
+        corrected_roll_deg=6.0,
+        pitch_deviation_deg=7.0,
+        height_m=0.09,
+        torso_contact=False,
+        supported_feet=4,
+        support_loss_duration_s=0.0,
+        fall_roll_deg=5.0,
+        fall_pitch_deg=8.0,
+        min_height_m=0.08,
+        max_support_loss_duration_s=0.2,
+    ) is True
