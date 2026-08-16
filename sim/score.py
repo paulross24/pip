@@ -63,8 +63,11 @@ def aggregate_candidate_score(results: Iterable[SimulationResult]) -> CandidateS
     parameters = candidates[0].parameters
     if any(result.parameters != parameters for result in candidates[1:]):
         raise ValueError("results must share identical parameters")
-    if len({result.surface_name for result in candidates}) != len(candidates):
-        raise ValueError("results must contain one result per surface")
+    if (
+        len(candidates) != len(_SURFACE_ORDER)
+        or {result.surface_name for result in candidates} != set(_SURFACE_ORDER)
+    ):
+        raise ValueError("results must contain each canonical surface exactly once: low, nominal, high")
 
     scored = tuple((result, score_result(result)) for result in candidates)
     ordered = tuple(sorted(scored, key=lambda item: (_surface_rank(item[0].surface_name), item[0].surface_name)))

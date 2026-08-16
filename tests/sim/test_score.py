@@ -28,7 +28,7 @@ def result(surface: str = "nominal", **changes: object) -> SimulationResult:
     values: dict[str, object] = {
         "parameters": PARAMETERS,
         "surface_name": surface,
-        "friction": 0.70,
+        "friction": {"low": 0.45, "nominal": 0.70, "high": 0.95}.get(surface, 0.50),
         "yaw_delta_deg": 12.0,
         "translation_x_m": 0.03,
         "translation_y_m": 0.04,
@@ -110,3 +110,24 @@ def test_aggregate_rejects_mixed_parameter_candidates() -> None:
 
     with pytest.raises(ValueError, match="parameters"):
         aggregate_candidate_score((result("low"), result("nominal", parameters=other_parameters)))
+
+
+@pytest.mark.parametrize(
+    "surface_names",
+    [
+        ("low", "nominal"),
+        ("low", "nominal", "high", "unknown"),
+    ],
+)
+def test_aggregate_requires_each_canonical_surface_exactly_once(
+    surface_names: tuple[str, ...]
+) -> None:
+    results = []
+    for surface_name in surface_names:
+        measured = result("high" if surface_name == "unknown" else surface_name)
+        if surface_name == "unknown":
+            object.__setattr__(measured, "surface_name", "unknown")
+        results.append(measured)
+
+    with pytest.raises(ValueError, match="low, nominal, high"):
+        aggregate_candidate_score(tuple(results))

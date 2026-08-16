@@ -103,6 +103,21 @@ def test_result_rejects_translation_that_disagrees_with_measured_xy_vector() -> 
 
 
 @pytest.mark.parametrize(
+    ("surface_name", "friction"),
+    [
+        ("low", 0.70),
+        ("nominal", 0.45),
+        ("unknown", 0.70),
+    ],
+)
+def test_result_rejects_unknown_or_mismatched_canonical_surface_friction_pair(
+    surface_name: str, friction: float
+) -> None:
+    with pytest.raises(ValueError, match="surface"):
+        result(surface_name=surface_name, friction=friction)
+
+
+@pytest.mark.parametrize(
     ("position", "quaternion", "angle"),
     [
         ((math.nan, 0.0, 0.1), (0.0, 0.0, 0.0, 1.0), 0.0),

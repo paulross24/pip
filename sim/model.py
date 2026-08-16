@@ -10,8 +10,13 @@ from typing import Iterable
 from pip_robot.turn.heading import signed_heading_delta_deg
 from pip_robot.turn.models import HeadingObservation, TurnParameters
 
+from .surfaces import required_surfaces
+
 
 _FEET = frozenset(("FL", "FR", "RL", "RR"))
+_CANONICAL_SURFACE_FRICTION = {
+    surface.name: surface.friction for surface in required_surfaces()
+}
 
 
 def _finite_float(value: object, field: str, *, minimum: float | None = None) -> float:
@@ -102,6 +107,9 @@ class SimulationResult:
         object.__setattr__(self, "friction", _finite_float(self.friction, "friction", minimum=0.0))
         if self.friction == 0.0:
             raise ValueError("friction must be positive")
+        expected_friction = _CANONICAL_SURFACE_FRICTION.get(self.surface_name)
+        if expected_friction is None or self.friction != expected_friction:
+            raise ValueError("surface_name and friction must be a canonical surface pair")
         for field in ("yaw_delta_deg", "translation_x_m", "translation_y_m"):
             object.__setattr__(self, field, _finite_float(getattr(self, field), field))
         for field in ("translation_m", "max_roll_deviation_deg", "max_pitch_deviation_deg", "elapsed_sim_s"):
