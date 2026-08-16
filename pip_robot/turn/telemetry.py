@@ -14,6 +14,18 @@ from uuid import uuid4
 
 
 TELEMETRY_SCHEMA = "pip-turn-run/v1"
+_REQUIRED_EVENT_FIELDS = frozenset(
+    {
+        "schema",
+        "run_id",
+        "utc_timestamp",
+        "monotonic_s",
+        "git_revision",
+        "parameters",
+        "state",
+        "event_type",
+    }
+)
 
 
 def _utc_now() -> str:
@@ -62,6 +74,10 @@ class TurnTelemetryWriter:
         **optional_fields: Any,
     ) -> dict[str, Any]:
         """Append an event without changing any existing telemetry lines."""
+        reserved_fields = set(optional_fields) & _REQUIRED_EVENT_FIELDS
+        if reserved_fields:
+            raise ValueError(f"optional fields cannot use reserved names: {sorted(reserved_fields)}")
+
         event = {
             "schema": TELEMETRY_SCHEMA,
             "run_id": run_id,
@@ -79,9 +95,18 @@ class TurnTelemetryWriter:
             }
         )
 
+        serialized_event = json.dumps(event, allow_nan=False, separators=(",", ":"))
+        needs_separator = False
+        if self._path.exists() and self._path.stat().st_size:
+            with self._path.open("rb") as existing_file:
+                existing_file.seek(-1, 2)
+                needs_separator = existing_file.read(1) != b"\n"
+
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._path.open("a", encoding="utf-8", newline="\n") as telemetry_file:
-            json.dump(event, telemetry_file, allow_nan=False, separators=(",", ":"))
+            if needs_separator:
+                telemetry_file.write("\n")
+            telemetry_file.write(serialized_event)
             telemetry_file.write("\n")
 
         return event

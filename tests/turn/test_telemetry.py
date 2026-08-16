@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from enum import Enum
 import json
 
+import pytest
+
 from pip_robot.turn.models import HeadingObservation, ImuSample, SafetyDecision, TurnParameters, TurnResult
 from pip_robot.turn.state_machine import TurnState
 from pip_robot.turn.telemetry import TurnTelemetryWriter, new_run_id
@@ -135,3 +137,56 @@ def test_new_run_id_returns_distinct_non_empty_strings() -> None:
     assert isinstance(first, str) and first
     assert isinstance(second, str) and second
     assert first != second
+
+
+def test_record_event_rejects_optional_fields_that_shadow_required_fields(tmp_path) -> None:
+    path = tmp_path / "turn.jsonl"
+    writer = TurnTelemetryWriter(path, "real-revision", utc_now=lambda: "2026-08-16T12:03:00+00:00", monotonic=lambda: 8.0)
+
+    with pytest.raises(ValueError, match="reserved"):
+        writer.record_event(
+            "run-reserved",
+            TurnParameters.from_mapping(BASELINE),
+            TurnState.STAND,
+            "before_phase",
+            git_revision="forged-revision",
+        )
+
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("unserializable", [object(), {"nested": [float("nan")]}])
+def test_record_event_leaves_existing_file_unchanged_when_event_cannot_be_serialized(
+    tmp_path, unserializable: object
+) -> None:
+    path = tmp_path / "existing.jsonl"
+    original = b'{"previous":"record"}\n'
+    path.write_bytes(original)
+    writer = TurnTelemetryWriter(path, "rev", utc_now=lambda: "2026-08-16T12:04:00+00:00", monotonic=lambda: 9.0)
+
+    with pytest.raises((TypeError, ValueError)):
+        writer.record_event(
+            "run-invalid",
+            TurnParameters.from_mapping(BASELINE),
+            TurnState.STAND,
+            "before_phase",
+            metadata=unserializable,
+        )
+
+    assert path.read_bytes() == original
+
+
+def test_record_event_separates_a_new_record_when_the_existing_file_lacks_a_final_newline(tmp_path) -> None:
+    path = tmp_path / "existing.jsonl"
+    path.write_text('{"previous":"record"}', encoding="utf-8")
+    writer = TurnTelemetryWriter(path, "rev", utc_now=lambda: "2026-08-16T12:05:00+00:00", monotonic=lambda: 10.0)
+
+    event = writer.record_event(
+        "run-separated",
+        TurnParameters.from_mapping(BASELINE),
+        TurnState.STAND,
+        "before_phase",
+    )
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert [json.loads(line) for line in lines] == [{"previous": "record"}, event]
