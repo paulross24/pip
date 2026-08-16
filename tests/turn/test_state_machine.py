@@ -83,3 +83,18 @@ def test_abort_is_rejected_after_verification_and_keeps_the_final_state() -> Non
         machine.abort()
 
     assert machine.state is TurnState.VERIFY
+
+
+def test_state_cannot_be_overwritten_to_resume_movement_after_abort() -> None:
+    machine = TurnStateMachine(TurnState.DRIVE_TURN)
+    machine.abort()
+
+    with pytest.raises(AttributeError):
+        machine.state = TurnState.DRIVE_TURN  # type: ignore[misc]
+
+    assert machine.state is TurnState.ABORT
+
+
+def test_constructor_rejects_a_non_state_initial_value() -> None:
+    with pytest.raises(TransitionError, match="state must be a TurnState"):
+        TurnStateMachine("PRECHECK")  # type: ignore[arg-type]

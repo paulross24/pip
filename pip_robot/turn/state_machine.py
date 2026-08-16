@@ -41,7 +41,14 @@ class TurnStateMachine:
     """Track the only permitted state changes without commanding hardware."""
 
     def __init__(self, state: TurnState = TurnState.PRECHECK) -> None:
-        self.state = state
+        if not isinstance(state, TurnState):
+            raise TransitionError("state must be a TurnState")
+        self._state = state
+
+    @property
+    def state(self) -> TurnState:
+        """Return the current phase without allowing external reassignment."""
+        return self._state
 
     def transition(self, next_state: TurnState) -> None:
         """Advance to the sole permitted successor of the current state."""
@@ -49,10 +56,10 @@ class TurnStateMachine:
             raise TransitionError("next state must be a TurnState")
         if _NEXT_STATE.get(self.state) is not next_state:
             raise TransitionError(f"cannot transition from {self.state.name} to {next_state.name}")
-        self.state = next_state
+        self._state = next_state
 
     def abort(self) -> None:
         """Enter the abort path unless verification has already completed."""
         if self.state is TurnState.VERIFY:
             raise TransitionError("cannot abort after verification")
-        self.state = TurnState.ABORT
+        self._state = TurnState.ABORT
