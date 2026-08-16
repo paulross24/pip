@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import math
+from pathlib import Path
 from types import ModuleType
 import sys
 
@@ -166,6 +167,33 @@ def test_default_vendor_import_is_deferred_until_read(monkeypatch):
     assert imported == ["pidog.sh3001"]
 
 
+def test_default_factory_passes_an_explicit_absolute_historical_config_path(monkeypatch):
+    constructor_arguments = []
+
+    class FakeSh3001:
+        def __init__(self, **kwargs):
+            constructor_arguments.append(kwargs)
+
+    pidog = ModuleType("pidog")
+    pidog.__path__ = []
+    sh3001 = ModuleType("pidog.sh3001")
+    sh3001.Sh3001 = FakeSh3001
+    pidog.sh3001 = sh3001
+    monkeypatch.setitem(sys.modules, "pidog", pidog)
+    monkeypatch.setitem(sys.modules, "pidog.sh3001", sh3001)
+    monkeypatch.setattr(
+        hardware,
+        "_install_robot_hat_i2c_scan_compatibility",
+        lambda: False,
+    )
+
+    hardware._default_sensor_factory()
+
+    expected = Path.home() / "pumpkin-pidog-agent" / "sh3001.config"
+    assert constructor_arguments == [{"db": str(expected)}]
+    assert expected.is_absolute()
+
+
 def test_optional_robot_hat_compatibility_scans_with_injected_vendor_modules(monkeypatch):
     opened_buses = []
 
@@ -237,6 +265,34 @@ def test_freshness_diagnostic_rejects_a_single_non_advancing_timestamp():
     assert report.duration_s == pytest.approx(0.1)
     assert report.estimated_hz == 0.0
     assert report.first_monotonic_s == report.last_monotonic_s == pytest.approx(0.1)
+    assert report.accepted is False
+
+
+def test_freshness_diagnostic_rejects_an_interior_duplicate_timestamp():
+    adapter = adapter_for(
+        ConstantSensor(),
+        monotonic=ScriptedClock([0.0, 0.1, 0.1, 0.1, 0.4, 0.5, 0.6]),
+    )
+
+    report = adapter.diagnose_freshness(duration_s=0.6, minimum_samples=3)
+
+    assert report.sample_count == 3
+    assert report.first_monotonic_s == pytest.approx(0.1)
+    assert report.last_monotonic_s == pytest.approx(0.5)
+    assert report.accepted is False
+
+
+def test_freshness_diagnostic_rejects_an_interior_timestamp_regression():
+    adapter = adapter_for(
+        ConstantSensor(),
+        monotonic=ScriptedClock([0.0, 0.2, 0.2, 0.1, 0.4, 0.5, 0.6]),
+    )
+
+    report = adapter.diagnose_freshness(duration_s=0.6, minimum_samples=3)
+
+    assert report.sample_count == 3
+    assert report.first_monotonic_s == pytest.approx(0.2)
+    assert report.last_monotonic_s == pytest.approx(0.5)
     assert report.accepted is False
 
 

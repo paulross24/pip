@@ -5,8 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from itertools import pairwise
 import math
 from numbers import Real
+from pathlib import Path
 import time
 from typing import Any
 
@@ -66,7 +68,8 @@ def _default_sensor_factory() -> Any:
     _install_robot_hat_i2c_scan_compatibility()
     from pidog.sh3001 import Sh3001
 
-    return Sh3001()
+    config_path = Path.home() / "pumpkin-pidog-agent" / "sh3001.config"
+    return Sh3001(db=str(config_path))
 
 
 def _finite_triple(value: object, label: str) -> tuple[float, float, float]:
@@ -209,7 +212,9 @@ class Sh3001ImuAdapter:
         duration = ended - started
         first = timestamps[0]
         last = timestamps[-1]
-        timestamps_advance = last > first
+        timestamps_advance = len(timestamps) > 1 and all(
+            current > previous for previous, current in pairwise(timestamps)
+        )
         estimated_hz = (
             (len(timestamps) - 1) / (last - first)
             if len(timestamps) > 1 and timestamps_advance
