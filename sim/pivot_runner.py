@@ -1,14 +1,16 @@
-"""Deterministic, injected Bullet runner for stationary-turn candidates.
+"""Deterministic Bullet runner for stationary-turn candidates.
 
-This module deliberately has no PyBullet or physical-hardware import.  A
-Bullet-compatible client is supplied by the caller, which keeps unit tests
-headless and makes the simulation boundary explicit.
+The simulation boundary remains injectable for unit tests.  The production
+adapter imports PyBullet lazily and always connects in headless DIRECT mode;
+physical-hardware packages are never imported.
 """
 
 from __future__ import annotations
 
 import argparse
 from dataclasses import asdict, dataclass
+import functools
+import inspect
 import json
 import math
 from numbers import Real
@@ -521,8 +523,39 @@ def _result_mapping(result: SimulationResult) -> dict[str, object]:
     return asdict(result)
 
 
-def _unavailable_client_factory() -> object:
-    raise RuntimeError("no Bullet client factory configured; DIRECT adapter is supplied in milestone task 4")
+class _DirectBulletClient:
+    """Bind PyBullet calls to one quiet DIRECT connection."""
+
+    def __init__(self, module: object) -> None:
+        self._module = module
+        self._client_id = module.connect(module.DIRECT)  # type: ignore[attr-defined]
+        if self._client_id < 0:
+            raise RuntimeError("PyBullet DIRECT connection failed")
+
+    def __getattr__(self, name: str) -> object:
+        attribute = getattr(self._module, name)
+        if inspect.isbuiltin(attribute):
+            return functools.partial(attribute, physicsClientId=self._client_id)
+        return attribute
+
+    def disconnect(self) -> None:
+        if self._client_id >= 0:
+            self._module.disconnect(physicsClientId=self._client_id)  # type: ignore[attr-defined]
+            self._client_id = -1
+
+
+def direct_client_factory() -> object:
+    """Create an isolated, deterministic PyBullet client in DIRECT mode."""
+    try:
+        import pybullet
+        import pybullet_data
+    except ImportError as error:
+        raise RuntimeError("PyBullet is required for DIRECT simulation") from error
+
+    client = _DirectBulletClient(pybullet)
+    client.setAdditionalSearchPath(pybullet_data.getDataPath())
+    client.setRealTimeSimulation(0)
+    return client
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -531,11 +564,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--config", default="config/turn_right_baseline.json")
     parser.add_argument("--simulation-config", default="config/simulation.json")
     parser.add_argument("--surface", choices=[surface.name for surface in required_surfaces()], default="nominal")
+    parser.add_argument("--smoke", action="store_true", help="run one headless DIRECT smoke simulation")
     args = parser.parse_args(argv)
     parameters = load_turn_parameters(args.config)
     settings = load_simulation_settings(args.simulation_config)
     surface = next(item for item in required_surfaces() if item.name == args.surface)
-    result = run_candidate(parameters, surface, settings, _unavailable_client_factory)
+    result = run_candidate(parameters, surface, settings, direct_client_factory)
     print(json.dumps(_result_mapping(result), sort_keys=True, separators=(",", ":")))
     return 0 if result.invalid_reason is None else 1
 
