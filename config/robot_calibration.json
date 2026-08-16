@@ -1,0 +1,5 @@
+{
+  "roll_error_limit_deg": 8.0,
+  "pitch_error_limit_deg": 8.0,
+  "physical_validation_warning": "These limits require physical validation before use."
+}
