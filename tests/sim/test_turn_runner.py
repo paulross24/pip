@@ -1,6 +1,8 @@
 import inspect
 
-from sim.pivot_runner import direct_client_factory, load_simulation_settings, load_turn_parameters
+import pytest
+
+from sim.pivot_runner import direct_client_factory, load_simulation_settings, load_turn_parameters, run_candidate
 from sim.surfaces import required_surfaces
 from sim.turn_primitives.diagonal_unload import DiagonalUnloadPrimitive
 from sim.turn_runner import run_primitive
@@ -29,3 +31,16 @@ def test_executor_has_only_one_initial_spawn_base_reset_and_no_velocity_reset():
     source = inspect.getsource(run_primitive)
     assert source.count("resetBasePositionAndOrientation") == 1
     assert "resetBaseVelocity" not in source
+
+
+def test_control_matches_legacy_motion_with_explicit_physical_right_sign_conversion():
+    parameters = load_turn_parameters("config/turn_right_baseline.json")
+    settings = load_simulation_settings("config/simulation.json")
+    surface = required_surfaces()[1]
+    legacy = run_candidate(parameters, surface, settings, direct_client_factory)
+    instrumented = run_primitive(
+        DiagonalUnloadPrimitive(), parameters, surface, settings, direct_client_factory,
+        run_id="parity-test",
+    ).result
+    assert instrumented.yaw_delta_deg == pytest.approx(-legacy.yaw_delta_deg, abs=1e-9)
+    assert instrumented.translation_m == pytest.approx(legacy.translation_m, abs=1e-9)

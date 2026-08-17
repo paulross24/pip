@@ -37,6 +37,7 @@ class PhaseAction:
     duration_s: float
     expected_support: frozenset[Leg]
     unloaded_feet: frozenset[Leg]
+    hold_s: float = 0.0
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -46,6 +47,8 @@ class PhaseAction:
         if any(not isinstance(value, FootTarget) for value in self.targets.values()):
             raise ValueError("targets must be FootTarget values")
         _finite(self.duration_s, "duration_s", positive=True)
+        if _finite(self.hold_s, "hold_s") < 0.0:
+            raise ValueError("hold_s must be nonnegative")
         if not self.expected_support <= frozenset(Leg) or not self.unloaded_feet <= frozenset(Leg):
             raise ValueError("support and unloaded feet must be canonical")
         if self.expected_support & self.unloaded_feet:
@@ -69,4 +72,3 @@ class TurnPrimitive(Protocol[P]):
     family: str
 
     def build_actions(self, parameters: P) -> tuple[PhaseAction, ...]: ...
-

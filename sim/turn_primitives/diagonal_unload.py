@@ -21,7 +21,7 @@ class DiagonalUnloadPrimitive:
             "STAND": parameters.settle_s,
             "SETTLE": parameters.settle_s,
             "SHIFT_UNLOAD": parameters.settle_s,
-            "DRIVE_TURN": parameters.settle_s + parameters.hold_s,
+            "DRIVE_TURN": parameters.settle_s,
             "REPLANT": parameters.replant_s,
             "RECOVER": parameters.settle_s,
         }
@@ -36,6 +36,7 @@ class DiagonalUnloadPrimitive:
                     durations[name],
                     support,
                     unloaded,
+                    parameters.hold_s if name == "DRIVE_TURN" else 0.0,
                 )
             )
         return validate_actions(tuple(actions))

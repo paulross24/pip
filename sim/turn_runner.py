@@ -164,7 +164,8 @@ def run_primitive(
             )
 
         for index, (action, targets) in enumerate(action_joints):
-            steps = max(1, math.ceil(action.duration_s / settings.time_step_s - 1e-12))
+            transition_s = settings.initial_settle_s if index == 0 and action.name == "STAND" else action.duration_s
+            steps = max(1, math.ceil(transition_s / settings.time_step_s - 1e-12))
             start = dict(current_targets)
             for step in range(1, steps + 1):
                 fraction = step / steps
@@ -183,6 +184,22 @@ def run_primitive(
                 if fell:
                     break
             current_targets = dict(targets)
+            if not fell and action.hold_s > 0.0:
+                hold_steps = max(1, math.ceil(action.hold_s / settings.time_step_s - 1e-12))
+                for _ in range(hold_steps):
+                    for joint_name, target in targets.items():
+                        client.setJointMotorControl2(  # type: ignore[attr-defined]
+                            bodyUniqueId=body_id,
+                            jointIndex=joint_indices[joint_name],
+                            controlMode=client.POSITION_CONTROL,  # type: ignore[attr-defined]
+                            targetPosition=target,
+                            maxVelocity=math.radians(parameters.speed),
+                        )
+                    client.stepSimulation()  # type: ignore[attr-defined]
+                    elapsed_s += settings.time_step_s
+                    sample(action.name)
+                    if fell:
+                        break
             if index == 1 and not fell:
                 baseline_pose = last_pose
                 baseline_roll, baseline_pitch, _ = _euler_deg(baseline_pose[1])
