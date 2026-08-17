@@ -3,11 +3,12 @@
 ## Result
 
 Milestone 3 identifies a sign-convention defect in the Milestone 2 evaluation
-and a mechanically distinct family worth tuning later. The conservative
-`differential_fore_aft/small` candidate is deterministic, fall-free, and
-physically right-positive on low, nominal, and high friction surfaces. It uses
-measured foot-ground forces and joint targets only; no base rotation or velocity
-is commanded.
+and explains the phase/contact mechanism, but no redesigned family meets every
+promotion gate. Several differential candidates are deterministic, fall-free,
+and physically right-positive on all surfaces, yet their intended drive phase
+has leftward reconstructed torque. They are therefore not mechanically
+promotable. The software milestone ends honestly blocked on deeper calibrated
+leg/contact geometry redesign; no hardware candidate is selected.
 
 ## Coordinate and torque convention
 
@@ -54,11 +55,14 @@ The diagnostic decoder uses contact tuple fields as follows:
 | 10 / 12 | lateral friction-force magnitudes |
 | 11 / 13 | corresponding world-space lateral directions |
 
-The ground reaction on PiP is reconstructed as `normal * normalForce +
-direction1 * lateral1 + direction2 * lateral2`. Synthetic deterministic tests
-validate the two lateral components, magnitude, native/right torque signs, and
-multi-contact aggregation. When lateral fields are absent the tangential force
-and torque are `null`, not invented as zero.
+The normal ground reaction on PiP is `normal * normalForce`. Bullet's lateral
+pair is reported in the reaction direction on body B, so the force on PiP/body A
+is `-(direction1 * lateral1 + direction2 * lateral2)`. A deterministic real
+DIRECT test slides a box in +X and proves the reconstructed force on the box is
+negative X. Synthetic tests separately validate both lateral components,
+magnitude, native/right torque signs, and multi-contact aggregation. When
+lateral fields are absent the tangential force and torque are `null`, not
+invented as zero.
 
 ## Baseline phase trace
 
@@ -95,26 +99,28 @@ byte-identical.
 
 Family-level conclusions:
 
-1. **Differential fore/aft — selected redesigned family.** Small and baseline
-   candidates remain right-positive on every surface. The small candidate has
-   lower translation and attitude excursion and the clearest consistent result.
+1. **Differential fore/aft — best near miss, not promoted.** All three candidates
+   remain final-right-positive and fall-free on every surface. However, the
+   corrected real-Bullet contact sign shows DRIVE_FORCE_COUPLE has leftward
+   torque and slightly leftward yaw. Earlier load transfer supplies the residual
+   right angular momentum, so the intended force-couple explanation fails.
 2. **Same-side shear — rejected.** Baseline and strong reverse sign across
    surfaces; the small candidate's nominal drive-phase torque/yaw mechanism is
    inconsistent even though final yaw is positive.
 3. **Staged pivot — rejected for now.** Low friction can produce right yaw, but
    nominal/high reverse sign. Replant/recovery behavior remains surface-sensitive.
-4. **Diagonal unload control.** The corrected baseline is right-positive across
-   surfaces, proving the Milestone 2 scoring-sign defect. Nearby variants fail
-   the mechanism-consistency gate on at least one surface, showing it is not a
-   uniformly robust family.
+4. **Diagonal unload control.** The corrected final heading is right-positive
+   across surfaces, proving the Milestone 2 scoring-sign defect. DRIVE_TURN yaw
+   is carried by existing angular momentum while corrected contact torque is
+   leftward, so it also fails the mechanics gate.
 
-The family promotion policy intentionally separates the historical control from
-redesigned-family selection. A larger corrected yaw from the control does not
-erase its historical inefficiency or make it the best next tuning target.
+The machine-readable report ranks families separately and records no promotable
+family or candidate. A larger corrected final yaw does not override an
+unexplained/opposite contact-torque mechanism.
 
-## Selected candidate
+## No selected candidate
 
-`differential_fore_aft/small` uses:
+The closest diagnostic candidate is `differential_fore_aft/small`, using:
 
 - unload: 3.0 mm;
 - side-opposed fore/aft travel: 2.0 mm;
@@ -124,23 +130,22 @@ erase its historical inefficiency or make it the best next tuning target.
 
 | Surface | Right yaw | Translation | Max roll | Max pitch | Final slip proxy | Fall |
 |---|---:|---:|---:|---:|---:|:---:|
-| low | +0.039264° | 0.002040 m | 0.029° | 2.176° | 0.0494 m | no |
-| nominal | +0.047181° | 0.003180 m | 0.040° | 2.197° | 0.0454 m | no |
-| high | +0.068252° | 0.002377 m | 0.057° | 2.181° | 0.0269 m | no |
+| low | +0.030184° | 0.002029 m | 0.026° | 2.176° | 0.1599 m | no |
+| nominal | +0.029032° | 0.001981 m | 0.044° | 2.197° | 0.1343 m | no |
+| high | +0.012759° | 0.001823 m | 0.083° | 2.181° | 0.3400 m | no |
 
-On nominal friction all four feet support through the force-couple drive (FR
-contacts for 89.6% of samples; all others for 100%). Left feet are driven toward
-negative X and right feet toward positive X. Their ground reactions form a
-clockwise/right couple. DRIVE_FORCE_COUPLE records a positive right-torque proxy
-of `+0.07422` across its samples and gains `+0.02623°`. Recovery gives back
-`−0.02593°`, but transfer/load phases preserve a final `+0.04718°` net result.
-The agreement between intended force couple, reconstructed torque sign, and
-measured yaw sign is the mechanical basis for promotion.
+The first side-opposed version gained right yaw during DRIVE but the
+real-Bullet-validated force reconstruction showed net left torque. Per-foot
+tracing showed FR/RL dominated the wrong sign. A second fore/rear-opposed version
+was tested without changing amplitude. On nominal friction it ends at
+`+0.02903°`, but DRIVE_FORCE_COUPLE itself loses about `0.0010°` and records a
+leftward right-positive torque proxy near `-0.0756`; the preceding LOAD_ALL
+phase supplies the positive angular momentum. This sign disagreement violates
+the physics sanity check, so the candidate is explicitly rejected.
 
-The yaw is small. That is acceptable for family selection and preferable to a
-large sign-reversing result. Later work should reduce recovery cancellation and
-separate settling displacement from true contacted-foot slip before increasing
-amplitude.
+The required next action is not a larger sweep. It is to map calibrated joint
+target direction to per-foot world displacement/force under load, then design a
+phase whose measured contact torque and yaw acceleration agree before tuning.
 
 ## Historical references inspected (read-only)
 

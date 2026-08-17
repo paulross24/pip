@@ -87,11 +87,18 @@ def test_summary_handles_heading_wrap_and_reports_dominant_foot():
     assert phase.dominant_yaw_torque_foot == "FL"
     assert phase.active_contacts == ("FL", "FR", "RL", "RR")
     assert phase.peak_positive_right_yaw_torque_nm == pytest.approx(1.75)
-    assert phase.total_slip_m == pytest.approx(0.008)
+    assert phase.total_slip_m == pytest.approx(0.0)
 
 
 def test_trace_requires_canonical_foot_order():
     bad_sample = sample(0.1, 0.0)
     object.__setattr__(bad_sample, "feet", tuple(reversed(bad_sample.feet)))
     with pytest.raises(ValueError, match="canonical"):
+        DiagnosticTrace(1, "run", "family", "candidate", "low", (bad_sample,))
+
+
+def test_trace_rejects_fractional_support_count():
+    bad_sample = sample(0.1, 0.0)
+    object.__setattr__(bad_sample, "support_foot_count", 2.5)
+    with pytest.raises(ValueError, match="integer"):
         DiagnosticTrace(1, "run", "family", "candidate", "low", (bad_sample,))

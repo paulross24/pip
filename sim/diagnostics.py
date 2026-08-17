@@ -105,7 +105,7 @@ class PhaseTraceSample:
             _vector3(value, field)
         if tuple(foot.leg for foot in self.feet) != LEGS:
             raise ValueError("feet must use canonical FL, FR, RL, RR order")
-        if isinstance(self.support_foot_count, bool) or not 0 <= self.support_foot_count <= 4:
+        if isinstance(self.support_foot_count, bool) or not isinstance(self.support_foot_count, int) or not 0 <= self.support_foot_count <= 4:
             raise ValueError("support_foot_count must be an integer from zero to four")
         if not isinstance(self.torso_contact, bool):
             raise ValueError("torso_contact must be boolean")
@@ -210,7 +210,10 @@ def summarize_trace(trace: DiagnosticTrace) -> tuple[PhaseSummary, ...]:
                 peak_positive_right_yaw_torque_nm=max(totals) if totals else None,
                 peak_negative_right_yaw_torque_nm=min(totals) if totals else None,
                 yaw_delta_deg=_wrapped_delta(samples[0].body_yaw_deg, samples[-1].body_yaw_deg),
-                total_slip_m=sum(foot.cumulative_slip_m for sample in samples for foot in sample.feet),
+                total_slip_m=sum(
+                    max(0.0, last.cumulative_slip_m - first.cumulative_slip_m)
+                    for first, last in zip(samples[0].feet, samples[-1].feet)
+                ),
                 max_roll_excursion_deg=max(s.body_roll_deg for s in samples) - min(s.body_roll_deg for s in samples),
                 max_pitch_excursion_deg=max(s.body_pitch_deg for s in samples) - min(s.body_pitch_deg for s in samples),
             )

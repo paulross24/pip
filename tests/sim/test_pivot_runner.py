@@ -241,7 +241,7 @@ def test_runner_uses_only_motor_targets_after_spawn_and_measures_bullet_motion()
     )
 
     assert result.parameters is PARAMETERS
-    assert result.yaw_delta_deg == pytest.approx(2.0, abs=1e-6)
+    assert result.yaw_delta_deg == pytest.approx(-2.0, abs=1e-6)
     assert (result.translation_x_m, result.translation_y_m, result.translation_m) == pytest.approx((0.03, 0.04, 0.05))
     assert result.max_roll_deviation_deg == pytest.approx(4.0, abs=1e-6)
     assert result.max_pitch_deviation_deg == pytest.approx(3.0, abs=1e-6)

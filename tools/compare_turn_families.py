@@ -7,7 +7,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 from sim.diagnostics import summarize_trace, write_trace_atomic
-from sim.family_comparison import CandidateComparison, SurfaceComparison, comparison_json_bytes, rank_candidates
+from sim.family_comparison import CandidateComparison, SurfaceComparison, comparison_json_bytes, rank_candidates, rank_families
 from sim.pivot_runner import direct_client_factory, load_simulation_settings, load_turn_parameters
 from sim.surfaces import required_surfaces
 from sim.turn_primitives import (
@@ -34,10 +34,20 @@ def build_candidates(baseline):
 
 def comparison_markdown(candidates):
     lines = [
-        "# Turn primitive family comparison", "",
+        "# Turn primitive family comparison", "", "## Family ranking", "",
+        "| Rank | Primitive family | Promotable | Selected candidate |",
+        "|---:|---|:---:|---|",
+    ]
+    for rank, family in enumerate(rank_families(candidates), 1):
+        lines.append(
+            f"| {rank} | {family.primitive_family} | {'yes' if family.promotable else 'no'} | "
+            f"{family.selected_candidate_id or 'none'} |"
+        )
+    lines.extend([
+        "", "## Candidate ranking", "",
         "| Rank | Primitive family | Candidate | Promotable | Low yaw | Nominal yaw | High yaw | Max translation | Fall |",
         "|---:|---|---|:---:|---:|---:|---:|---:|:---:|",
-    ]
+    ])
     for rank, candidate in enumerate(candidates, 1):
         surfaces = candidate.surfaces
         lines.append(
@@ -75,6 +85,9 @@ def run_comparison(output_dir, *, trace_runs=True):
                 write_trace_atomic(output / "diagnostics" / f"{run_id}.json", run.trace)
             summaries = summarize_trace(run.trace)
             selected = next(item for item in summaries if item.phase == mechanism_phase[primitive.family])
+            selected_index = summaries.index(selected)
+            cancellation = sum(max(0.0, -item.yaw_delta_deg) for item in summaries[selected_index + 1 :])
+            cancellation_fraction = cancellation / selected.yaw_delta_deg if selected.yaw_delta_deg > 0.0 else 1.0
             totals = [sample.total_right_yaw_torque_nm for sample in run.trace.samples if sample.total_right_yaw_torque_nm is not None]
             slip = sum(foot.cumulative_slip_m for foot in run.trace.samples[-1].feet)
             surfaces.append(
@@ -84,6 +97,7 @@ def run_comparison(output_dir, *, trace_runs=True):
                     run.result.contact_instability, max(totals, default=0.0),
                     min(totals, default=0.0), sum(totals), slip, run.result.fell,
                     selected.yaw_delta_deg > 0.0 and (selected.net_right_yaw_torque_nm or 0.0) > 0.0,
+                    cancellation_fraction,
                 )
             )
         results.append(CandidateComparison(primitive.family, candidate_id, asdict(parameters), tuple(surfaces)))

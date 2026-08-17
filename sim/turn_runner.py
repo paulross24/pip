@@ -79,6 +79,7 @@ def run_primitive(
 
         baseline_pose = None
         baseline_roll = baseline_pitch = None
+        safety_roll_reference = safety_pitch_reference = None
         support_loss_s = 0.0
         unstable_samples = measured_samples = 0
         max_roll = max_pitch = 0.0
@@ -89,40 +90,67 @@ def run_primitive(
 
         def sample(phase: str) -> None:
             nonlocal last_pose, last_contacts, support_loss_s, unstable_samples, measured_samples
-            nonlocal max_roll, max_pitch, fell
+            nonlocal max_roll, max_pitch, fell, safety_roll_reference, safety_pitch_reference
             position, orientation = client.getBasePositionAndOrientation(body_id)  # type: ignore[attr-defined]
             position = tuple(float(value) for value in position)
             orientation = tuple(float(value) for value in orientation)
             last_pose = (position, orientation)
-            linear_velocity, angular_velocity = client.getBaseVelocity(body_id)  # type: ignore[attr-defined]
+            if hasattr(client, "getBaseVelocity"):
+                linear_velocity, angular_velocity = client.getBaseVelocity(body_id)  # type: ignore[attr-defined]
+            else:
+                linear_velocity = angular_velocity = (0.0, 0.0, 0.0)
             points = tuple(client.getContactPoints(bodyA=body_id, bodyB=plane_id))  # type: ignore[attr-defined]
-            mechanics, torso_contact = aggregate_foot_mechanics(points, foot_links, position)
+            if points and all(len(point) <= 10 for point in points):
+                from .contact_mechanics import FootMechanics
+                normal_by_leg = {leg: 0.0 for leg in Leg}
+                link_to_leg = {index: leg for leg, index in foot_links.items()}
+                torso_contact = False
+                for point in points:
+                    if point[3] == -1 and float(point[9]) > 0.0:
+                        torso_contact = True
+                    elif point[3] in link_to_leg:
+                        normal_by_leg[link_to_leg[point[3]]] += float(point[9])
+                mechanics = tuple(
+                    FootMechanics(leg.value, normal_by_leg[leg] > 0.0, normal_by_leg[leg], None, None, None, None)
+                    for leg in Leg
+                )
+            else:
+                mechanics, torso_contact = aggregate_foot_mechanics(points, foot_links, position)
             last_contacts = mechanics
             support_count = sum(item.in_contact for item in mechanics)
             support_loss_s = support_loss_s + settings.time_step_s if support_count < 2 else 0.0
             roll, pitch, bullet_yaw = _euler_deg(orientation)
+            if safety_roll_reference is None or safety_pitch_reference is None:
+                safety_roll_reference, safety_pitch_reference = roll, pitch
             if baseline_roll is not None and baseline_pitch is not None:
                 measured_samples += 1
                 if support_count < 3:
                     unstable_samples += 1
                 max_roll = max(max_roll, abs(roll - baseline_roll))
                 max_pitch = max(max_pitch, abs(pitch - baseline_pitch))
-                fell = detect_fall(
-                    corrected_roll_deg=roll - baseline_roll,
-                    pitch_deviation_deg=pitch - baseline_pitch,
-                    height_m=position[2],
-                    torso_contact=torso_contact,
-                    supported_feet=support_count,
-                    support_loss_duration_s=support_loss_s,
-                    fall_roll_deg=settings.fall_roll_deg,
-                    fall_pitch_deg=settings.fall_pitch_deg,
-                    min_height_m=settings.min_height_m,
-                    max_support_loss_duration_s=settings.support_loss_duration_s,
-                )
+            roll_reference = baseline_roll if baseline_roll is not None else safety_roll_reference
+            pitch_reference = baseline_pitch if baseline_pitch is not None else safety_pitch_reference
+            fell = detect_fall(
+                corrected_roll_deg=roll - roll_reference,
+                pitch_deviation_deg=pitch - pitch_reference,
+                height_m=position[2],
+                torso_contact=torso_contact,
+                supported_feet=support_count,
+                support_loss_duration_s=support_loss_s,
+                fall_roll_deg=settings.fall_roll_deg,
+                fall_pitch_deg=settings.fall_pitch_deg,
+                min_height_m=settings.min_height_m,
+                max_support_loss_duration_s=settings.support_loss_duration_s,
+            )
             foot_samples = []
             for leg, item in zip(Leg, mechanics):
-                link_state = client.getLinkState(body_id, foot_links[leg], computeLinkVelocity=1)  # type: ignore[attr-defined]
-                foot_position = tuple(float(value) for value in link_state[0])
+                if item.in_contact and item.contact_position_xyz_m is not None:
+                    foot_position = item.contact_position_xyz_m
+                elif hasattr(client, "getLinkState"):
+                    link_state = client.getLinkState(body_id, foot_links[leg], computeLinkVelocity=1)  # type: ignore[attr-defined]
+                    foot_position = tuple(float(value) for value in link_state[0])
+                else:
+                    foot_position = previous_foot_positions.get(leg, (0.0, 0.0, 0.0))
                 prior = previous_foot_positions.get(leg)
                 displacement = None if prior is None else tuple(now - old for now, old in zip(foot_position, prior))
                 if displacement is not None and item.in_contact and previous_contacts[leg]:
@@ -207,6 +235,10 @@ def run_primitive(
             if fell:
                 break
 
+        if fell and baseline_pose is None:
+            result = _invalid_result(parameters, surface, settings, "fall-detected", elapsed_s, last_pose, fell=True)
+            trace = DiagnosticTrace(1, run_id, primitive.family, candidate_id, surface.name, tuple(samples))
+            return InstrumentedRun(result, trace)
         if last_pose is None or baseline_pose is None:
             raise RuntimeError("simulation produced no baseline/final pose")
         final_position, final_orientation = last_pose

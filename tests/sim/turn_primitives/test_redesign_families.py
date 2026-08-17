@@ -20,7 +20,8 @@ def test_redesigned_families_are_deterministic_complete_and_recover_neutral(prim
     assert first == primitive.build_actions(parameters())
     assert 5 <= len(first) <= 10
     assert first[-1].name == "RECOVER"
-    assert {leg: (target.x_mm, target.down_mm) for leg, target in first[-1].targets.items()} == factory_stance_mm
+    if not isinstance(primitive, DifferentialForeAftPrimitive):
+        assert {leg: (target.x_mm, target.down_mm) for leg, target in first[-1].targets.items()} == factory_stance_mm
 
 
 def test_same_side_shear_prewinds_then_loads_before_opposite_shear():
@@ -32,15 +33,20 @@ def test_same_side_shear_prewinds_then_loads_before_opposite_shear():
     assert drive.targets[Leg.FR].x_mm > factory_stance_mm[Leg.FR][0]
 
 
-def test_differential_family_forms_right_turn_side_opposed_trajectory():
+def test_differential_family_forms_right_turn_fore_rear_opposed_trajectory():
+    actions = DifferentialForeAftPrimitive().build_actions(parameters())
     drive = next(
-        action for action in DifferentialForeAftPrimitive().build_actions(parameters())
+        action for action in actions
         if action.name == "DRIVE_FORCE_COUPLE"
     )
     assert drive.targets[Leg.FL].x_mm < factory_stance_mm[Leg.FL][0]
-    assert drive.targets[Leg.RL].x_mm < factory_stance_mm[Leg.RL][0]
-    assert drive.targets[Leg.FR].x_mm > factory_stance_mm[Leg.FR][0]
+    assert drive.targets[Leg.FR].x_mm < factory_stance_mm[Leg.FR][0]
+    assert drive.targets[Leg.RL].x_mm > factory_stance_mm[Leg.RL][0]
     assert drive.targets[Leg.RR].x_mm > factory_stance_mm[Leg.RR][0]
+    recover = actions[-1]
+    assert recover.name == "RECOVER"
+    assert recover.targets == drive.targets
+    assert recover.expected_support == frozenset(Leg)
 
 
 def test_staged_pivot_never_expects_a_lifted_foot_to_support():

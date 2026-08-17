@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import math
 from numbers import Real
 from typing import Mapping, Protocol, TypeVar
+from types import MappingProxyType
 
 from pip_robot.turn.models import TurnParameters
 from sim.kinematics import Leg
@@ -46,6 +47,7 @@ class PhaseAction:
             raise ValueError("targets must contain every canonical leg")
         if any(not isinstance(value, FootTarget) for value in self.targets.values()):
             raise ValueError("targets must be FootTarget values")
+        object.__setattr__(self, "targets", MappingProxyType(dict(self.targets)))
         _finite(self.duration_s, "duration_s", positive=True)
         if _finite(self.hold_s, "hold_s") < 0.0:
             raise ValueError("hold_s must be nonnegative")

@@ -8,6 +8,7 @@ from sim.contact_mechanics import (
     yaw_moment_z_nm,
 )
 from sim.kinematics import Leg
+from sim.pivot_runner import direct_client_factory
 
 
 def contact(
@@ -36,8 +37,8 @@ def contact(
 def test_reconstructs_normal_and_two_lateral_force_components():
     force = reconstruct_contact_force(contact())
     assert force.normal_xyz_n == (0.0, 0.0, 10.0)
-    assert force.tangential_xyz_n == (-3.0, 2.0, 0.0)
-    assert force.total_xyz_n == (-3.0, 2.0, 10.0)
+    assert force.tangential_xyz_n == (3.0, -2.0, 0.0)
+    assert force.total_xyz_n == (3.0, -2.0, 10.0)
 
 
 def test_missing_optional_lateral_fields_preserves_normal_but_not_fake_tangent():
@@ -66,9 +67,9 @@ def test_aggregates_multiple_points_per_foot_and_separates_torso():
     fl = next(item for item in mechanics if item.leg == "FL")
     assert fl.in_contact is True
     assert fl.normal_force_n == 14.0
-    assert fl.tangential_force_xyz_n == (0.0, -3.0, 0.0)
-    assert fl.bullet_tau_z_nm == -3.0
-    assert fl.right_yaw_torque_nm == 3.0
+    assert fl.tangential_force_xyz_n == (0.0, 3.0, 0.0)
+    assert fl.bullet_tau_z_nm == 3.0
+    assert fl.right_yaw_torque_nm == -3.0
     assert torso_contact is True
     assert sum(item.in_contact for item in mechanics) == 1
 
@@ -76,3 +77,33 @@ def test_aggregates_multiple_points_per_foot_and_separates_torso():
 def test_rejects_nonfinite_consumed_contact_values():
     with pytest.raises(ValueError, match="finite"):
         reconstruct_contact_force(contact(normal_force=math.nan))
+
+
+def test_real_bullet_lateral_force_opposes_a_sliding_body_velocity():
+    client = direct_client_factory()
+    try:
+        client.resetSimulation()
+        client.setTimeStep(1.0 / 240.0)
+        client.setGravity(0.0, 0.0, -9.81)
+        plane = client.loadURDF("plane.urdf", useFixedBase=True)
+        box = client.loadURDF("cube_small.urdf", basePosition=(0.0, 0.0, 0.03))
+        client.changeDynamics(plane, -1, lateralFriction=0.8)
+        client.changeDynamics(box, -1, lateralFriction=0.8)
+        for _ in range(120):
+            client.stepSimulation()
+        client.resetBaseVelocity(box, linearVelocity=(1.0, 0.0, 0.0))
+        points = ()
+        for _ in range(4):
+            client.stepSimulation()
+            points = client.getContactPoints(bodyA=box, bodyB=plane)
+            if points:
+                break
+        tangential_x = sum(
+            force.tangential_xyz_n[0]
+            for point in points
+            if (force := reconstruct_contact_force(point)).tangential_xyz_n is not None
+        )
+        assert points
+        assert tangential_x < 0.0
+    finally:
+        client.disconnect()

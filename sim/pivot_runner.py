@@ -324,7 +324,7 @@ def _invalid_result(
     )
 
 
-def run_candidate(
+def _run_candidate_legacy(
     parameters: TurnParameters,
     surface: Surface,
     settings: SimulationSettings,
@@ -521,6 +521,22 @@ def run_candidate(
                 client.disconnect()  # type: ignore[attr-defined]
             except Exception:
                 pass
+
+
+def run_candidate(
+    parameters: TurnParameters,
+    surface: Surface,
+    settings: SimulationSettings,
+    client_factory: Callable[[], object],
+) -> SimulationResult:
+    """Compatibility entry point delegated to the shared primitive executor."""
+    from .turn_primitives.diagonal_unload import DiagonalUnloadPrimitive
+    from .turn_runner import run_primitive
+
+    return run_primitive(
+        DiagonalUnloadPrimitive(), parameters, surface, settings, client_factory,
+        run_id=f"diagonal-unload-{surface.name}",
+    ).result
 
 
 def _result_mapping(result: SimulationResult) -> dict[str, object]:

@@ -78,7 +78,12 @@ def reconstruct_contact_force(point: Sequence[object]) -> ContactForce:
     direction_1 = _vector3(point[11], "lateral_direction_1")
     magnitude_2 = _finite(point[12], "lateral_friction_2_n")
     direction_2 = _vector3(point[13], "lateral_direction_2")
-    tangential = _add(_scale(direction_1, magnitude_1), _scale(direction_2, magnitude_2))
+    # Bullet reports lateral vectors in the reaction direction on body B.  The
+    # equal-and-opposite force on queried body A is therefore their negation.
+    tangential = _scale(
+        _add(_scale(direction_1, magnitude_1), _scale(direction_2, magnitude_2)),
+        -1.0,
+    )
     return ContactForce(normal_xyz, tangential, _add(normal_xyz, tangential))
 
 
