@@ -1,11 +1,14 @@
 """Milestone 2 diagonal-unload control primitive."""
 
+from dataclasses import dataclass
+
 from pip_robot.turn.models import TurnParameters
 from sim.kinematics import Leg
 
 from .base import FootTarget, PhaseAction, validate_actions
 
 
+@dataclass(frozen=True)
 class DiagonalUnloadPrimitive:
     family = "diagonal_unload"
 

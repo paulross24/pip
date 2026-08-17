@@ -1,5 +1,7 @@
 """Conservative one-foot-at-a-time stepping pivot family."""
 
+from dataclasses import dataclass
+
 from pip_robot.turn.models import TurnParameters
 from sim.kinematics import Leg
 
@@ -7,6 +9,7 @@ from ._targets import stance
 from .base import PhaseAction, validate_actions
 
 
+@dataclass(frozen=True)
 class StagedPivotPrimitive:
     family = "staged_pivot"
 

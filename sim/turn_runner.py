@@ -142,8 +142,9 @@ def run_primitive(
                         right_yaw_torque_nm=item.right_yaw_torque_nm,
                     )
                 )
-            native_torques = [item.bullet_tau_z_nm for item in mechanics]
-            right_torques = [item.right_yaw_torque_nm for item in mechanics]
+            contacting = [item for item in mechanics if item.in_contact]
+            native_torques = [item.bullet_tau_z_nm for item in contacting]
+            right_torques = [item.right_yaw_torque_nm for item in contacting]
             samples.append(
                 PhaseTraceSample(
                     phase=phase,
